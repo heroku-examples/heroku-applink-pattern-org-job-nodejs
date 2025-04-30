@@ -63,15 +63,15 @@ Replicate the functionality and process structure of the `heroku-integration-pat
 - [ ] Set up a single Worker process (`server/worker.js`) that:
     - [ ] **Listens to `quoteQueue` on Redis.**
     - [ ] **Listens to `dataQueue` on Redis.**
-- [ ] Implement Worker Logic within `server/worker.js` (or delegate to helper modules):
-    - [ ] **Handler for `quoteQueue` messages:**
-        - [ ] **Initialize AppLink SDK with `context` from job payload.**
-        - [ ] **Query Opportunities/OLIs using `org.dataApi.query` with `soqlWhereClause`.**
-        - [ ] **Create `UnitOfWork`.**
-        - [ ] **Register `Quote` creations.**
-        - [ ] **Register `QuoteLineItem` creations (applying discount logic - make dynamic?).**
-        - [ ] **`commitUnitOfWork`.**
-        - [ ] **Implement job status tracking/logging (optional).**
+- [x] Implement Worker Logic within `server/worker.js` (or delegate to helper modules):
+    - [x] **Handler for `quoteQueue` messages:**
+        - [x] **Initialize AppLink SDK with `context` from job payload.**
+        - [x] **Query Opportunities/OLIs using `org.dataApi.query` with `soqlWhereClause`.**
+        - [x] **Create `UnitOfWork`.**
+        - [x] **Register `Quote` creations.**
+        - [x] **Register `QuoteLineItem` creations (applying discount logic - make dynamic?).**
+        - [x] **`commitUnitOfWork`.**
+        - [x] **Implement job status tracking/logging (optional).**
     - [ ] **Handler for `dataQueue` messages:**
         - [ ] **Initialize AppLink SDK with `context`.**
         - [ ] **If operation is 'create':**
