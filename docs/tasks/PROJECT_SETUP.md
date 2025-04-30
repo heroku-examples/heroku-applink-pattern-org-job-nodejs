@@ -35,6 +35,10 @@ Replicate the functionality and process structure of the `heroku-integration-pat
   - [x] Listen to `dataQueue` on Redis
   - [x] Add placeholder handlers for messages
 - [x] Set up Salesforce SDK middleware in Fastify (`server/middleware/salesforce.js`) to parse `x-client-context`.
+- [x] Implement API endpoints (`server/routes/api.js`) as job dispatchers:
+  - [x] **`POST /api/executebatch`: Parse request, generate Job ID, publish job to `quoteQueue` (Payload: { jobId, context, soqlWhereClause }).**
+  - [x] **`POST /api/data/create`: Parse request, generate Job ID, publish job to `dataQueue` (Payload: { jobId, context, operation: 'create', count }).**
+  - [x] **`POST /api/data/delete`: Parse request, generate Job ID, publish job to `dataQueue` (Payload: { jobId, context, operation: 'delete' }).**
 
 ## In Progress Tasks
 - [ ] Set up Salesforce SDK middleware in Fastify (`server/middleware/salesforce.js`) to parse `x-client-context`.
@@ -59,10 +63,6 @@ Replicate the functionality and process structure of the `heroku-integration-pat
 - [ ] Set up a single Worker process (`server/worker.js`) that:
     - [ ] **Listens to `quoteQueue` on Redis.**
     - [ ] **Listens to `dataQueue` on Redis.**
-- [ ] Implement API endpoints (`server/routes/api.js`) as job dispatchers:
-    - [ ] **`POST /api/executebatch`: Parse request, generate Job ID, publish job to `quoteQueue` (Payload: { jobId, context, soqlWhereClause }).**
-    - [ ] **`POST /api/data/create`: Parse request, generate Job ID, publish job to `dataQueue` (Payload: { jobId, context, operation: 'create', count }).**
-    - [ ] **`POST /api/data/delete`: Parse request, generate Job ID, publish job to `dataQueue` (Payload: { jobId, context, operation: 'delete' }).**
 - [ ] Implement Worker Logic within `server/worker.js` (or delegate to helper modules):
     - [ ] **Handler for `quoteQueue` messages:**
         - [ ] **Initialize AppLink SDK with `context` from job payload.**

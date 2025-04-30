@@ -3,7 +3,7 @@ import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import config from './config/index.js';
 import salesforcePlugin from './middleware/salesforce.js';
-// import apiRoutes from './routes/api.js';
+import apiRoutes from './routes/api.js';
 
 // Basic logging configuration
 const fastify = Fastify({
@@ -50,8 +50,8 @@ fastify.get('/health', async (request, reply) => {
   return { status: 'ok' };
 });
 
-// TODO: Register API routes
-// fastify.register(apiRoutes, { prefix: '/api' });
+// Register API routes with prefix
+fastify.register(apiRoutes, { prefix: '/api' });
 
 // Start server
 const start = async () => {
