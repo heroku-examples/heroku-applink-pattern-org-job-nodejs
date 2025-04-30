@@ -1,5 +1,5 @@
-const Redis = require('ioredis');
-const { config } = require('./index'); // Import central config
+import Redis from 'ioredis';
+import config from './index.js'; // Use import
 
 // Create a new Redis client instance
 // It will automatically use the REDIS_URL from the environment if available,
@@ -30,4 +30,4 @@ redisClient.on('error', (error) => {
 });
 
 // Export the client instance for use in other parts of the application
-module.exports = { redisClient };
+export default redisClient;

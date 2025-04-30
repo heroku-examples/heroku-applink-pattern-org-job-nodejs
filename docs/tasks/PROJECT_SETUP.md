@@ -17,8 +17,29 @@ Replicate the functionality and process structure of the `heroku-integration-pat
 - [x] Created memory file (`.cursor/rules/learned-memories.mdc`).
 - [x] Created task list file (`docs/tasks/PROJECT_SETUP.md`).
 - [x] Set up Node.js project foundation (Fastify, Redis, basic structure, dependencies).
+- [x] Initialize Node.js project with pnpm
+- [x] Add basic server structure (routes, config, lib):
+  - [x] `server/index.js` (Fastify entry point)
+  - [x] `server/config/index.js` (Central config)
+  - [x] `server/config/redis.js` (Redis config)
+  - [x] `server/middleware/salesforce.js` (Placeholder)
+  - [x] `server/routes/api.js` (Placeholder for API routes)
+  - [x] `server/routes/health.js` (Health check endpoint)
+- [x] Configure Swagger (`@fastify/swagger`, `@fastify/swagger-ui`)
+  - [x] Dynamically generate schema from routes
+- [x] Set up Redis connection using ioredis (`server/config/redis.js`)
+- [x] Create `.gitignore` with Node.js defaults
+- [x] Remove `node_modules` from Git tracking
+- [x] Set up basic worker process (`server/worker.js`)
+  - [x] Listen to `quoteQueue` on Redis
+  - [x] Listen to `dataQueue` on Redis
+  - [x] Add placeholder handlers for messages
 
 ## In Progress Tasks
+- [ ] Set up basic worker process (server/worker.js)
+  - [ ] Listen to `quoteQueue` on Redis
+  - [ ] Listen to `dataQueue` on Redis
+  - [ ] Add placeholder handlers for messages
 
 ## Future Tasks
 - [ ] **Set up Fastify server (`server/index.js` - Web Process):**
@@ -68,39 +89,4 @@ Replicate the functionality and process structure of the `heroku-integration-pat
             - [ ] **Monitor job status.**
         - [ ] **If operation is 'delete':**
             - [ ] **Query sample Opportunity IDs (`org.dataApi.query`).**
-            - [ ] **Prepare ID data using `org.bulkApi.createDataTableBuilder`.**
-            - [ ] **Submit Opportunity deletion job using `org.bulkApi.ingest` with `operation: 'hardDelete'`.**
-            - [ ] **Monitor job status.**
-        - [ ] **Implement job status tracking/logging (optional, possibly using `org.bulkApi.getFailedResults`).**
-- [ ] Configure environment variables (`.env`, `.env.example`).
-- [ ] Create `Procfile` for Heroku deployment (`web`, `worker`).
-- [ ] Set up run scripts (`package.json`).
-- [ ] Configure linting and formatting (`eslint`, `prettier`).
-- [ ] Review and update `README.md` to reflect Node.js usage.
-- [x] Add basic health check endpoint (`/health`).
-- [ ] (Optional) Add unit/integration tests (`tests/`).
-
-## Implementation Plan (Single Worker)
-
-1.  **Foundation:** Set up Fastify, Redis (`ioredis`), AppLink SDK middleware, basic structure using JavaScript.
-2.  **API Implementation:** Create Fastify routes (`/api/...`) in `server/index.js` to publish jobs to Redis.
-3.  **Worker Implementation:** Create a single `server/worker.js` process that subscribes to *both* `quoteQueue` and `dataQueue`. Implement message handlers within this worker to:
-    *   Process quote jobs using AppLink SDK `DataApi`/`UnitOfWork`.
-    *   Process data jobs using AppLink SDK `org.bulkApi`.
-4.  **Configuration & Deployment:** Finalize `.env`, `Procfile` (with `web` and `worker`), run scripts.
-5.  **Quality:** Ensure standards compliance.
-
-## Relevant Files (Single Worker)
-
-- api-docs.yaml
-- README.md
-- .cursor/rules/*
-- server/index.js (Web process)
-- server/worker.js (Worker process - listens to both queues)
-- server/config/redis.js
-- server/middleware/salesforce.js
-- server/routes/api.js
-- server/lib/ (Optional JS helper modules for worker logic)
-- Procfile (`web`, `worker`)
-- .env.example
-- package.json 
+            - [ ] **Prepare ID data using `

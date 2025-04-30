@@ -1,4 +1,4 @@
-require('dotenv').config();
+import 'dotenv/config';
 
 // Centralized configuration
 const config = {
@@ -9,4 +9,4 @@ const config = {
   // Add other configurations as needed
 };
 
-module.exports = { config };
+export default config;

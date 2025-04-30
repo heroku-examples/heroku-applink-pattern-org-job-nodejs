@@ -1,9 +1,13 @@
 {
   "name": "heroku-integration-pattern-org-job-nodejs",
   "version": "1.0.0",
+  "type": "module",
   "description": "",
-  "main": "index.js",
+  "main": "server/index.js",
   "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "worker": "node server/worker.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
