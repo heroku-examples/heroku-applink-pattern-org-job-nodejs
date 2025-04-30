@@ -34,12 +34,10 @@ Replicate the functionality and process structure of the `heroku-integration-pat
   - [x] Listen to `quoteQueue` on Redis
   - [x] Listen to `dataQueue` on Redis
   - [x] Add placeholder handlers for messages
+- [x] Set up Salesforce SDK middleware in Fastify (`server/middleware/salesforce.js`) to parse `x-client-context`.
 
 ## In Progress Tasks
-- [ ] Set up basic worker process (server/worker.js)
-  - [ ] Listen to `quoteQueue` on Redis
-  - [ ] Listen to `dataQueue` on Redis
-  - [ ] Add placeholder handlers for messages
+- [ ] Set up Salesforce SDK middleware in Fastify (`server/middleware/salesforce.js`) to parse `x-client-context`.
 
 ## Future Tasks
 - [ ] **Set up Fastify server (`server/index.js` - Web Process):**
@@ -61,7 +59,6 @@ Replicate the functionality and process structure of the `heroku-integration-pat
 - [ ] Set up a single Worker process (`server/worker.js`) that:
     - [ ] **Listens to `quoteQueue` on Redis.**
     - [ ] **Listens to `dataQueue` on Redis.**
-- [ ] Set up Salesforce SDK middleware in Fastify (`server/middleware/salesforce.js`) to parse `x-client-context`.
 - [ ] Implement API endpoints (`server/routes/api.js`) as job dispatchers:
     - [ ] **`POST /api/executebatch`: Parse request, generate Job ID, publish job to `quoteQueue` (Payload: { jobId, context, soqlWhereClause }).**
     - [ ] **`POST /api/data/create`: Parse request, generate Job ID, publish job to `dataQueue` (Payload: { jobId, context, operation: 'create', count }).**

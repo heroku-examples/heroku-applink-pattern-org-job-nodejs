@@ -1,13 +1,9 @@
-require('dotenv').config();
-const Fastify = require('fastify');
-// const path = require('node:path'); // No longer needed here
-// const fs = require('node:fs'); // No longer needed here
-const swagger = require('@fastify/swagger');
-const swaggerUi = require('@fastify/swagger-ui');
-const { config } = require('./config'); // Use centralized config
-// TODO: Create these files later
-// const { salesforcePlugin } = require('./middleware/salesforce.js');
-// const apiRoutes = require('./routes/api.js');
+import Fastify from 'fastify';
+import swagger from '@fastify/swagger';
+import swaggerUi from '@fastify/swagger-ui';
+import config from './config/index.js';
+import salesforcePlugin from './middleware/salesforce.js';
+// import apiRoutes from './routes/api.js';
 
 // Basic logging configuration
 const fastify = Fastify({
@@ -16,46 +12,21 @@ const fastify = Fastify({
   }
 });
 
-// Remove YAML loading logic
-// let openapiSpec = {};
-// try {
-//   const yaml = require('js-yaml');
-//   openapiSpec = yaml.load(fs.readFileSync(path.join(__dirname, '../api-docs.yaml'), 'utf8'));
-//   fastify.log.info('Successfully loaded api-docs.yaml');
-// } catch (e) {
-//   fastify.log.error('Could not load or parse api-docs.yaml', e);
-//   // Proceed with a minimal spec if file loading fails
-//   openapiSpec = {
-//     openapi: '3.0.0',
-//     info: {
-//       title: 'API Docs (Error Loading File)',
-//       version: '1.0.0'
-//     },
-//     paths: {}
-//   };
-// }
-
 // Register Swagger for dynamic generation
 fastify.register(swagger, {
-  // Remove mode: 'static' and specification block
   openapi: {
-    // Basic OpenAPI info - details will come from route schemas
-    openapi: '3.0.0', // Specify OpenAPI version
+    openapi: '3.0.0',
     info: {
       title: 'Org Job Pricing Engine API',
       description: 'API for calculating pricing and managing sample data, interacting with Salesforce via AppLink.',
-      version: '1.0.0' // Or pull from package.json
+      version: '1.0.0'
     },
     servers: [
-      // Add server info if needed, e.g., for local testing
-      // { url: 'http://localhost:3000', description: 'Local server' }
     ],
     tags: [
-      // Define tags used in route schemas later
       { name: 'Pricing Engine', description: 'Quote generation endpoints' },
       { name: 'Sample Data', description: 'Sample data management endpoints' }
     ]
-    // Components (like securitySchemes) can be added here if needed globally
   }
 });
 
@@ -63,20 +34,21 @@ fastify.register(swagger, {
 fastify.register(swaggerUi, {
   routePrefix: '/docs',
   uiConfig: {
-    docExpansion: 'list', // Expand operations list by default
+    docExpansion: 'list',
     deepLinking: false
   },
   staticCSP: true,
   transformStaticCSP: (header) => header
 });
 
+// Register Salesforce middleware globally
+// This will run the preHandler for every request
+fastify.register(salesforcePlugin);
+
 // Placeholder for health check
 fastify.get('/health', async (request, reply) => {
   return { status: 'ok' };
 });
-
-// TODO: Register Salesforce middleware
-// fastify.register(salesforcePlugin);
 
 // TODO: Register API routes
 // fastify.register(apiRoutes, { prefix: '/api' });
