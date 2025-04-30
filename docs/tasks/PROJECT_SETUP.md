@@ -39,9 +39,14 @@ Replicate the functionality and process structure of the `heroku-integration-pat
   - [x] **`POST /api/executebatch`: Parse request, generate Job ID, publish job to `quoteQueue` (Payload: { jobId, context, soqlWhereClause }).**
   - [x] **`POST /api/data/create`: Parse request, generate Job ID, publish job to `dataQueue` (Payload: { jobId, context, operation: 'create', count }).**
   - [x] **`POST /api/data/delete`: Parse request, generate Job ID, publish job to `dataQueue` (Payload: { jobId, context, operation: 'delete' }).**
+- [x] Implement basic worker structure (`server/worker.js`)
+- [x] Add listeners for `quoteQueue` and `dataQueue` in worker
+- [x] Implement `handleQuoteMessage` using Data API Unit of Work
+- [x] Implement `handleDataMessage` using Bulk API v2 (`org.bulkApi` methods)
 
 ## In Progress Tasks
-- [ ] Set up Salesforce SDK middleware in Fastify (`server/middleware/salesforce.js`) to parse `x-client-context`.
+
+(None currently)
 
 ## Future Tasks
 - [ ] **Set up Fastify server (`server/index.js` - Web Process):**
@@ -79,8 +84,8 @@ Replicate the functionality and process structure of the `heroku-integration-pat
             - [x] **Query active Pricebook Entries (`org.dataApi.query`).**
             - [x] **Prepare data for Opportunities using `org.bulkApi.createDataTableBuilder`.**
             - [x] **Submit Opportunity creation job using `org.bulkApi.ingest`.**
-            - [x] **Monitor job status using `org.bulkApi.getInfo`.**
-            - [x] **Query created Opportunity IDs.**
+            - [x] **Monitor job status using `pollBulkJobStatus` (checks `org.bulkApi.getInfo`).**
+            - [x] **Query/Fetch created Opportunity IDs (using `org.bulkApi.getSuccessfulResults`).**
             - [x] **Prepare data for OpportunityLineItems using `org.bulkApi.createDataTableBuilder`.**
             - [x] **Submit OLI creation job using `org.bulkApi.ingest`.**
             - [x] **Monitor job status.**
@@ -90,3 +95,10 @@ Replicate the functionality and process structure of the `heroku-integration-pat
             - [x] **Submit Opportunity deletion job using `org.bulkApi.ingest` with `operation: 'hardDelete'`.**
             - [x] **Monitor job status.**
             - [x] **Implement job status tracking/logging (optional, possibly using `org.bulkApi.getFailedResults`).**
+- [ ] Implement robust error handling and retry logic for queue messages
+- [ ] Add more sophisticated data generation logic if needed
+- [ ] Add metrics/monitoring for worker performance and job throughput
+- [ ] Consider using a more robust job queue library if complexity increases (e.g., BullMQ)
+
+## Relevant files
+- `server/worker.js` - Listens to Redis queues (`quoteQueue`, `dataQueue`) and processes jobs using Salesforce SDK
