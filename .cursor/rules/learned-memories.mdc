@@ -10,6 +10,9 @@ This file stores project-specific knowledge, conventions, and user preferences l
 ## User Preferences
 
 *   **Language:** Use plain JavaScript (Node.js) for the initial implementation, overriding the default TypeScript rule. Can revisit adding TypeScript later.
+*   **Git Workflow:** Stage changes after each logical step is completed. Propose a commit message and wait for user confirmation before committing.
+    *   **Pre-commit Check:** Before asking for commit confirmation, always run `node server/index.js` to check for startup errors.
+    *   **Staging:** Use `git add .` to stage all changes.
 
 ## Technical Decisions
 

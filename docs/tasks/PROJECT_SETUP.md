@@ -32,11 +32,11 @@ Replicate the functionality and process structure of the `heroku-integration-pat
     - [ ] **Register API routes.**
     - [x] **Implement basic server start logic with error handling.**
     - [x] **Add basic health check endpoint (`/health`).**
-- [ ] Implement basic server structure (routes, config, lib):
+- [x] Implement basic server structure (routes, config, lib):
     - [x] Create placeholder files (`config/index.js`, `config/redis.js`, `middleware/salesforce.js`, `routes/api.js`).
     - [x] Add basic central configuration (`server/config/index.js`).
     - [x] Update `server/index.js` to use central config.
-- [ ] Set up Redis connection using `ioredis` (`server/config/redis.js`).
+- [x] Set up Redis connection using `ioredis` (`server/config/redis.js`).
 - [ ] Set up a single Worker process (`server/worker.js`) that:
     - [ ] **Listens to `quoteQueue` on Redis.**
     - [ ] **Listens to `dataQueue` on Redis.**
