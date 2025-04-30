@@ -126,9 +126,234 @@ async function handleQuoteMessage (message) {
   }
 }
 
+// --- Bulk API Helper Functions ---
+
+// Polls Bulk API job status until completion or failure
+async function pollBulkJobStatus (org, jobId, jobType, requestLog) {
+  const POLLING_INTERVAL_MS = 5000; // Poll every 5 seconds
+  const MAX_POLLS = 24; // Max wait time: 2 minutes (adjust as needed)
+  let polls = 0;
+
+  requestLog.info(`[Worker] Polling status for ${jobType} Job ID: ${jobId}`);
+
+  while (polls < MAX_POLLS) {
+    try {
+      // Assume getInfo method exists and returns job status
+      const jobInfo = await org.bulkApi.getInfo(jobId);
+      requestLog.debug(`[Worker] Job ${jobId} status: ${jobInfo?.state}`);
+
+      if (!jobInfo) {
+        throw new Error('Job info not found.');
+      }
+
+      switch (jobInfo.state) {
+        case 'JobComplete':
+        case 'Completed': // Allow for variations in state names
+          requestLog.info(`[Worker] ${jobType} Job ID: ${jobId} completed successfully.`);
+          // Optional: Fetch results if needed (e.g., getSuccessfulResults, getFailedResults)
+          // const failedResults = await org.bulkApi.getFailedResults(jobId);
+          // if (failedResults && failedResults.length > 0) { ... }
+          return { success: true, jobInfo };
+        case 'Failed':
+          requestLog.error(`[Worker] ${jobType} Job ID: ${jobId} failed. State: ${jobInfo.state}, Message: ${jobInfo.errorMessage}`);
+          // Optional: Fetch failed results for detailed logging
+          return { success: false, jobInfo };
+        case 'Aborted':
+          requestLog.warn(`[Worker] ${jobType} Job ID: ${jobId} was aborted.`);
+          return { success: false, jobInfo };
+        case 'UploadComplete': // Still processing
+        case 'InProgress': // Still processing
+          // Continue polling
+          break;
+        default:
+          requestLog.warn(`[Worker] Unknown job state for ${jobType} Job ID ${jobId}: ${jobInfo.state}`);
+          // Continue polling but log warning
+          break;
+      }
+    } catch (pollError) {
+      requestLog.error({ err: pollError }, `[Worker] Error polling status for ${jobType} Job ID ${jobId}`);
+      // Decide if polling should stop or continue after an error
+      // For now, we stop polling on error
+      return { success: false, error: pollError };
+    }
+
+    polls++;
+    await new Promise(resolve => setTimeout(resolve, POLLING_INTERVAL_MS));
+  }
+
+  requestLog.warn(`[Worker] Polling timeout for ${jobType} Job ID: ${jobId}. Job may still be running.`);
+  return { success: false, error: new Error('Polling timeout') };
+}
+
+// Placeholder for actually generating Opportunity data
+function generateSampleOpportunities (count, accountId, pricebookId) {
+  const opportunities = [];
+  for (let i = 0; i < count; i++) {
+    opportunities.push({
+      // Ensure required fields are included
+      Name: `Sample Opp ${Date.now()}-${i}`,
+      AccountId: accountId, // Need a valid Account ID
+      StageName: 'Prospecting',
+      CloseDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // ~30 days from now
+      Pricebook2Id: pricebookId
+    });
+  }
+  return opportunities;
+}
+
+// Placeholder for generating OLI data
+function generateSampleOLIs (createdOppIds, pricebookEntryIds) {
+  const olis = [];
+  if (!createdOppIds || createdOppIds.length === 0 || !pricebookEntryIds || pricebookEntryIds.length === 0) {
+    return olis;
+  }
+  createdOppIds.forEach(oppId => {
+    // Add 1-3 random line items for each opp
+    const lineItemCount = Math.floor(Math.random() * 3) + 1;
+    for (let i = 0; i < lineItemCount; i++) {
+      olis.push({
+        OpportunityId: oppId,
+        PricebookEntryId: pricebookEntryIds[Math.floor(Math.random() * pricebookEntryIds.length)], // Pick a random PBE
+        Quantity: Math.floor(Math.random() * 10) + 1,
+        UnitPrice: Math.floor(Math.random() * 100) + 10 // Random price between 10-110
+      });
+    }
+  });
+  return olis;
+}
+
+// --- Main Data Handler ---
+
 async function handleDataMessage (message) {
-  console.log(`[Worker] Received data message: ${message}`);
-  // Placeholder for actual data processing logic
+  console.log(`[Worker] Received data job message`);
+  let jobData;
+  try {
+    jobData = JSON.parse(message);
+  } catch (err) {
+    console.error('[Worker] Failed to parse data job message:', message, err);
+    return; // Cannot proceed
+  }
+
+  const { jobId, context, operation, count } = jobData;
+  console.log(`[Worker] Processing Data Job ID: ${jobId}, Operation: ${operation}`);
+
+  const sf = AppLinkClient.init(context);
+  const org = sf.context.org;
+  const logger = sf.logger || console; // Use SDK logger if available, else console
+
+  try {
+    if (operation === 'create') {
+      logger.info(`[Worker] Starting data creation for Job ID: ${jobId}, Count: ${count}`);
+
+      // --- Create Operation --- //
+
+      // 1. Prerequisites (Account, Pricebook, PBEs) - Simplified for example
+      //    In a real scenario, you might query or ensure these exist.
+      //    Using placeholders - THESE MUST BE VALID IDs IN THE TARGET ORG
+      const placeholderAccountId = '001xxxxxxxxxxxxxxx'; // !! REPLACE with a valid Account ID from your org !!
+      logger.warn('[Worker] Using placeholder Account ID. Replace with a valid ID from your org.');
+      const standardPricebook = await org.dataApi.query("SELECT Id FROM Pricebook2 WHERE IsStandard = true LIMIT 1");
+      if (!standardPricebook?.records?.[0]?.Id) {
+        throw new Error('Standard Pricebook not found.');
+      }
+      const standardPricebookId = standardPricebook.records[0].Id;
+
+      const pbes = await org.dataApi.query(`SELECT Id FROM PricebookEntry WHERE Pricebook2Id = '${standardPricebookId}' AND IsActive = true LIMIT 5`);
+      if (!pbes?.records || pbes.records.length === 0) {
+        throw new Error('No active Pricebook Entries found in Standard Pricebook.');
+      }
+      const pricebookEntryIds = pbes.records.map(pbe => pbe.Id);
+
+      // 2. Generate and Ingest Opportunities
+      const oppsToCreate = generateSampleOpportunities(count, placeholderAccountId, standardPricebookId);
+      logger.info(`[Worker] Generated ${oppsToCreate.length} sample opportunities.`);
+      // Assume createDataTableBuilder exists and takes object name and data array
+      const oppTable = await org.bulkApi.createDataTableBuilder('Opportunity', oppsToCreate);
+      // Assume ingest exists and returns a jobInfo object with an id
+      const oppIngestJob = await org.bulkApi.ingest(oppTable);
+      logger.info(`[Worker] Submitted Opportunity creation job: ${oppIngestJob.id}`);
+
+      // 3. Monitor Opportunity Job
+      const oppJobResult = await pollBulkJobStatus(org, oppIngestJob.id, 'Opportunity Create', logger);
+      if (!oppJobResult.success) {
+        throw new Error(`Opportunity creation job ${oppIngestJob.id} failed or timed out.`);
+      }
+
+      // 4. Get Created Opportunity IDs (Requires querying results - simplified)
+      //    THIS IS A MAJOR SIMPLIFICATION. Bulk API requires fetching successful results.
+      //    Let's query them back based on name for this example, assuming names are unique enough.
+      logger.warn('[Worker] Simplified fetching of created Opp IDs. Real implementation needs Bulk API result retrieval.');
+      const oppNames = oppsToCreate.map(o => o.Name).map(name => `'${name.replace(/'/g, "\\'")}'`); // Escape names for SOQL
+      const createdOpps = await org.dataApi.query(`SELECT Id FROM Opportunity WHERE Name IN (${oppNames.join(',')})`);
+      const createdOppIds = createdOpps.records.map(o => o.Id);
+      logger.info(`[Worker] Retrieved ${createdOppIds.length} created Opportunity IDs.`);
+
+      if (createdOppIds.length === 0) {
+        logger.warn('[Worker] No Opportunity IDs retrieved after creation job. Cannot create OLIs.');
+        return;
+      }
+
+      // 5. Generate and Ingest OpportunityLineItems
+      const olisToCreate = generateSampleOLIs(createdOppIds, pricebookEntryIds);
+      if (olisToCreate.length === 0) {
+        logger.info('[Worker] No OLIs generated to create.');
+        return; // Nothing more to do
+      }
+      logger.info(`[Worker] Generated ${olisToCreate.length} sample OLIs.`);
+      const oliTable = await org.bulkApi.createDataTableBuilder('OpportunityLineItem', olisToCreate);
+      const oliIngestJob = await org.bulkApi.ingest(oliTable);
+      logger.info(`[Worker] Submitted OLI creation job: ${oliIngestJob.id}`);
+
+      // 6. Monitor OLI Job
+      const oliJobResult = await pollBulkJobStatus(org, oliIngestJob.id, 'OLI Create', logger);
+      if (!oliJobResult.success) {
+        throw new Error(`OLI creation job ${oliIngestJob.id} failed or timed out.`);
+      }
+
+      logger.info(`[Worker] Successfully completed data creation for Job ID: ${jobId}`);
+
+    } else if (operation === 'delete') {
+      logger.info(`[Worker] Starting data deletion for Job ID: ${jobId}`);
+
+      // --- Delete Operation --- //
+
+      // 1. Query Opportunities to Delete (Example: query by name prefix)
+      //    Adjust the query logic as needed to target the correct records.
+      const oppsToDeleteQuery = "SELECT Id FROM Opportunity WHERE Name LIKE 'Sample Opp %' LIMIT 1000"; // Limit deletion scope
+      logger.info(`[Worker] Querying Opportunities for deletion: ${oppsToDeleteQuery}`);
+      const oppsToDeleteResult = await org.dataApi.query(oppsToDeleteQuery);
+
+      if (!oppsToDeleteResult?.records || oppsToDeleteResult.records.length === 0) {
+        logger.info(`[Worker] No sample Opportunities found to delete for Job ID: ${jobId}`);
+        return;
+      }
+      logger.info(`[Worker] Found ${oppsToDeleteResult.records.length} Opportunities to delete.`);
+
+      // 2. Prepare IDs for Deletion
+      const oppIdsToDelete = oppsToDeleteResult.records.map(opp => ({ Id: opp.Id }));
+      const deleteTable = await org.bulkApi.createDataTableBuilder('Opportunity', oppIdsToDelete);
+
+      // 3. Submit Deletion Job
+      // Assume ingest can take an operation type like 'hardDelete'
+      const deleteIngestJob = await org.bulkApi.ingest(deleteTable, { operation: 'hardDelete' });
+      logger.info(`[Worker] Submitted Opportunity deletion job: ${deleteIngestJob.id}`);
+
+      // 4. Monitor Deletion Job
+      const deleteJobResult = await pollBulkJobStatus(org, deleteIngestJob.id, 'Opportunity Delete', logger);
+      if (!deleteJobResult.success) {
+        throw new Error(`Opportunity deletion job ${deleteIngestJob.id} failed or timed out.`);
+      }
+
+      logger.info(`[Worker] Successfully completed data deletion for Job ID: ${jobId}`);
+
+    } else {
+      logger.warn(`[Worker] Unknown data operation requested: ${operation} for Job ID: ${jobId}`);
+    }
+
+  } catch (error) {
+    logger.error({ err: error }, `[Worker] Critical error processing Data Job ID ${jobId}`);
+    // Consider error handling strategy (retry, DLQ, etc.)
+  }
 }
 
 async function listenToQueue (queueName, handler) {

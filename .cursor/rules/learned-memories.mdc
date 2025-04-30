@@ -10,9 +10,9 @@ This file stores project-specific knowledge, conventions, and user preferences l
 ## User Preferences
 
 *   **Language:** Use plain JavaScript (Node.js) for the initial implementation, overriding the default TypeScript rule. Can revisit adding TypeScript later.
-*   **Git Workflow:** Stage changes after each logical step is completed. Propose a commit message and wait for user confirmation before committing.
-    *   **Pre-commit Check:** Before asking for commit confirmation, always run `node server/index.js` to check for startup errors.
-    *   **Staging:** Use `git add .` to stage all changes.
+*   **Git Workflow:**
+    -   Prefer staging changes with `git add .` instead of individual files.
+    -   **Pre-commit Check:** Before staging/committing, run the relevant script (`npm run dev` for server, `npm run worker` for worker) in the foreground. Check terminal output for immediate exit errors. If no immediate errors occur and standard startup logs appear (e.g., 'Server listening...', '[Worker] Redis client connected.'), consider the basic startup check successful and proceed with staging/commit. No need to wait for the process to fully exit or be killed.
 
 ## Technical Decisions
 
@@ -20,6 +20,11 @@ This file stores project-specific knowledge, conventions, and user preferences l
 *   **Quote Generation:** Replicate Java logic using AppLink SDK `DataApi` and `UnitOfWork`.
 *   **Sample Data Operations:** Replicate Java logic using AppLink SDK `BulkApi` features (`org.bulkApi`).
 *   **Redis Usage:** Use `ioredis` for connecting to Redis and employ Redis Pub/Sub for job queuing between the `web` and `worker` processes.
+*   **CSS Framework:** Tailwind v4 is used. Ensure usage aligns with v4 documentation and practices, noting differences from v3.
+*   **Bulk API:** Use `org.bulkApi` methods (`createDataTableBuilder`, `ingest`, `getInfo`, `getFailedResults`, etc.) for bulk operations via AppLink SDK.
+*   **AppLink SDK Node.js Example:** Refer to [heroku-integration-pattern-api-access-nodejs/index.js](https://github.com/heroku-examples/heroku-integration-pattern-api-access-nodejs/blob/main/index.js) for usage patterns.
+*   **Java Quote Worker Reference:** Refer to [PricingEngineWorkerService.java](https://github.com/heroku-examples/heroku-integration-pattern-org-job-java/blob/main/src/main/java/com/heroku/java/services/PricingEngineWorkerService.java) for original quote logic.
+*   **Java Data Worker Reference:** Refer to [SampleDataWorkerService.java](https://github.com/heroku-examples/heroku-integration-pattern-org-job-java/blob/main/src/main/java/com/heroku/java/services/SampleDataWorkerService.java) for original data generation/deletion logic.
 
 ## Project Conventions
 
@@ -27,3 +32,4 @@ This file stores project-specific knowledge, conventions, and user preferences l
 *   **API Specification:** Adhere strictly to the endpoints and schemas defined in `api-docs.yaml`.
 *   **Ignored Java Code:** The Apex class (`OpportunityToQuoteJob.cls`) found in the Java project's `src-org` directory is illustrative only and should not be called or replicated; focus on the logic within the Java worker services.
 *   **README:** The `README.md` should be updated from the Java version to accurately reflect Node.js installation, configuration, and execution steps.
+*   **Code Comments:** Comments should explain the *what* or *why* of the code itself, not the history of changes made by the assistant or reasons for removing old code. Avoid leaving blocks of commented-out code.

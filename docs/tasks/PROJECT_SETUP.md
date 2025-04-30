@@ -72,18 +72,21 @@ Replicate the functionality and process structure of the `heroku-integration-pat
         - [x] **Register `QuoteLineItem` creations (applying discount logic - make dynamic?).**
         - [x] **`commitUnitOfWork`.**
         - [x] **Implement job status tracking/logging (optional).**
-    - [ ] **Handler for `dataQueue` messages:**
-        - [ ] **Initialize AppLink SDK with `context`.**
-        - [ ] **If operation is 'create':**
-            - [ ] **Query Standard Pricebook ID (`org.dataApi.query`).**
-            - [ ] **Query active Pricebook Entries (`org.dataApi.query`).**
-            - [ ] **Prepare data for Opportunities using `org.bulkApi.createDataTableBuilder`.**
-            - [ ] **Submit Opportunity creation job using `org.bulkApi.ingest`.**
-            - [ ] **Monitor job status using `org.bulkApi.getInfo`.**
-            - [ ] **Query created Opportunity IDs.**
-            - [ ] **Prepare data for OpportunityLineItems using `org.bulkApi.createDataTableBuilder`.**
-            - [ ] **Submit OLI creation job using `org.bulkApi.ingest`.**
-            - [ ] **Monitor job status.**
-        - [ ] **If operation is 'delete':**
-            - [ ] **Query sample Opportunity IDs (`org.dataApi.query`).**
-            - [ ] **Prepare ID data using `
+    - [x] **Handler for `dataQueue` messages:**
+        - [x] **Initialize AppLink SDK with `context`.**
+        - [x] **If operation is 'create':**
+            - [x] **Query Standard Pricebook ID (`org.dataApi.query`).**
+            - [x] **Query active Pricebook Entries (`org.dataApi.query`).**
+            - [x] **Prepare data for Opportunities using `org.bulkApi.createDataTableBuilder`.**
+            - [x] **Submit Opportunity creation job using `org.bulkApi.ingest`.**
+            - [x] **Monitor job status using `org.bulkApi.getInfo`.**
+            - [x] **Query created Opportunity IDs.**
+            - [x] **Prepare data for OpportunityLineItems using `org.bulkApi.createDataTableBuilder`.**
+            - [x] **Submit OLI creation job using `org.bulkApi.ingest`.**
+            - [x] **Monitor job status.**
+        - [x] **If operation is 'delete':**
+            - [x] **Query sample Opportunity IDs (`org.dataApi.query`).**
+            - [x] **Prepare ID data using `org.bulkApi.createDataTableBuilder`.**
+            - [x] **Submit Opportunity deletion job using `org.bulkApi.ingest` with `operation: 'hardDelete'`.**
+            - [x] **Monitor job status.**
+            - [x] **Implement job status tracking/logging (optional, possibly using `org.bulkApi.getFailedResults`).**
