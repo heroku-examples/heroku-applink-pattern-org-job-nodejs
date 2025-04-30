@@ -1,0 +1,26 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Project Memory
+
+This file stores project-specific knowledge, conventions, and user preferences learned by the AI assistant for the `heroku-integration-pattern-org-job-nodejs` project.
+
+## User Preferences
+
+*   **Language:** Use plain JavaScript (Node.js) for the initial implementation, overriding the default TypeScript rule. Can revisit adding TypeScript later.
+
+## Technical Decisions
+
+*   **Salesforce Interaction:** Use the `@heroku/salesforce-sdk-nodejs` (AppLink SDK) for all Salesforce interactions.
+*   **Quote Generation:** Replicate Java logic using AppLink SDK `DataApi` and `UnitOfWork`.
+*   **Sample Data Operations:** Replicate Java logic using AppLink SDK `BulkApi` features (`org.bulkApi`).
+*   **Redis Usage:** Use `ioredis` for connecting to Redis and employ Redis Pub/Sub for job queuing between the `web` and `worker` processes.
+
+## Project Conventions
+
+*   **Process Model:** Follow the Java project's structure with one `web` process (Fastify API) and one `worker` process (handling both quote and data jobs via Redis Pub/Sub).
+*   **API Specification:** Adhere strictly to the endpoints and schemas defined in `api-docs.yaml`.
+*   **Ignored Java Code:** The Apex class (`OpportunityToQuoteJob.cls`) found in the Java project's `src-org` directory is illustrative only and should not be called or replicated; focus on the logic within the Java worker services.
+*   **README:** The `README.md` should be updated from the Java version to accurately reflect Node.js installation, configuration, and execution steps.
