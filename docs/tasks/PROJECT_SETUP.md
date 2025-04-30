@@ -19,19 +19,23 @@ Replicate the functionality and process structure of the `heroku-integration-pat
 - [x] Set up Node.js project foundation (Fastify, Redis, basic structure, dependencies).
 
 ## In Progress Tasks
-- [ ] Set up Fastify server (`server/index.js` - Web Process).
 
 ## Future Tasks
 - [ ] **Set up Fastify server (`server/index.js` - Web Process):**
-    - [ ] **Install Swagger dependencies (`@fastify/swagger`, `@fastify/swagger-ui`).**
-    - [ ] **Require necessary modules (Fastify, dotenv, config, middleware, routes).**
-    - [ ] **Initialize Fastify instance.**
-    - [ ] **Register `@fastify/swagger` with OpenAPI configuration (referencing `api-docs.yaml` if possible, or defining inline).**
-    - [ ] **Register `@fastify/swagger-ui` at `/docs` route prefix.**
+    - [x] **Install Swagger dependencies (`@fastify/swagger`, `@fastify/swagger-ui`).**
+    - [x] **Install YAML parser (`js-yaml`).**
+    - [x] **Require necessary modules (Fastify, dotenv, path, fs, swagger, swagger-ui, js-yaml).**
+    - [x] **Initialize Fastify instance.**
+    - [x] **Register `@fastify/swagger` for dynamic generation with basic OpenAPI info.**
+    - [x] **Register `@fastify/swagger-ui` at `/docs` route prefix.**
     - [ ] **Register Salesforce SDK middleware.**
     - [ ] **Register API routes.**
-    - [ ] **Implement basic server start logic with error handling.**
-- [ ] Implement basic server structure (routes, config, lib).
+    - [x] **Implement basic server start logic with error handling.**
+    - [x] **Add basic health check endpoint (`/health`).**
+- [ ] Implement basic server structure (routes, config, lib):
+    - [x] Create placeholder files (`config/index.js`, `config/redis.js`, `middleware/salesforce.js`, `routes/api.js`).
+    - [x] Add basic central configuration (`server/config/index.js`).
+    - [x] Update `server/index.js` to use central config.
 - [ ] Set up Redis connection using `ioredis` (`server/config/redis.js`).
 - [ ] Set up a single Worker process (`server/worker.js`) that:
     - [ ] **Listens to `quoteQueue` on Redis.**
@@ -73,7 +77,7 @@ Replicate the functionality and process structure of the `heroku-integration-pat
 - [ ] Set up run scripts (`package.json`).
 - [ ] Configure linting and formatting (`eslint`, `prettier`).
 - [ ] Review and update `README.md` to reflect Node.js usage.
-- [ ] Add basic health check endpoint (`/health`).
+- [x] Add basic health check endpoint (`/health`).
 - [ ] (Optional) Add unit/integration tests (`tests/`).
 
 ## Implementation Plan (Single Worker)

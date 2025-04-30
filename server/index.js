@@ -4,6 +4,7 @@ const Fastify = require('fastify');
 // const fs = require('node:fs'); // No longer needed here
 const swagger = require('@fastify/swagger');
 const swaggerUi = require('@fastify/swagger-ui');
+const { config } = require('./config'); // Use centralized config
 // TODO: Create these files later
 // const { salesforcePlugin } = require('./middleware/salesforce.js');
 // const apiRoutes = require('./routes/api.js');
@@ -11,7 +12,7 @@ const swaggerUi = require('@fastify/swagger-ui');
 // Basic logging configuration
 const fastify = Fastify({
   logger: {
-    level: process.env.LOG_LEVEL || 'info'
+    level: config.logLevel // Use config value
   }
 });
 
@@ -83,9 +84,8 @@ fastify.get('/health', async (request, reply) => {
 // Start server
 const start = async () => {
   try {
-    const port = process.env.PORT || 3000;
-    await fastify.listen({ port: port, host: '0.0.0.0' }); // Listen on all interfaces for Heroku
-    fastify.log.info(`Server listening on port ${port}`);
+    await fastify.listen({ port: config.port, host: '0.0.0.0' }); // Listen on all interfaces for Heroku
+    fastify.log.info(`Server listening on port ${config.port}`);
     fastify.log.info(`Swagger UI available at /docs`);
   } catch (err) {
     fastify.log.error('Error starting server:', err);
