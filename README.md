@@ -57,7 +57,7 @@ Open a new terminal window and enter the following command to start a job that g
 ```sh
 # Use the invoke script (replace my-org with your org alias)
 # Target: POST /api/data/create
-./bin/invoke.sh my-org 'http://localhost:5001/api/data/create' '{}'
+./bin/invoke.sh my-org 'http://localhost:5006/api/data/create' '{}'
 ```
 
 > The default is to create 10 Opportunities, however if you want to experiment with more use the `count` parameter: `http://localhost:5001/api/data/create?count=100`

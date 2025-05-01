@@ -85,7 +85,7 @@ EOF
 ENCODED_CLIENT_CONTEXT=$(echo -n "$CLIENT_CONTEXT_JSON" | base64)
 
 # Make the request
-RESPONSE=$(curl -s -X POST "$API_URL" \
+RESPONSE=$(curl -s -w "\nHTTP Status: %{http_code}\n" -X POST "$API_URL" \
   -H "Content-Type: application/json" \
   -H "x-client-context: $ENCODED_CLIENT_CONTEXT" \
   -d "$PAYLOAD_JSON")

@@ -1,11 +1,20 @@
 'use strict';
 
 import redisClient from './config/redis.js';
-import pkg from '@heroku/salesforce-sdk-nodejs';
-const { AppLinkClient } = pkg;
+// We don't need AppLinkClient import here anymore, we need ContextImpl
+// import AppLinkClient from '@heroku/salesforce-sdk-nodejs';
+import { ContextImpl } from '@heroku/salesforce-sdk-nodejs/dist/sdk/context.js';
+// import pkg from '@heroku/salesforce-sdk-nodejs';
+// const { AppLinkClient } = pkg;
+// import Redis from 'ioredis'; // No longer need Redis import here
+// import config from './config/index.js'; // No longer need config import here
 
-const QUOTE_QUEUE = 'quoteQueue';
-const DATA_QUEUE = 'dataQueue';
+// Remove dedicated blocking client
+// const blockingRedisClient = new Redis(...)
+
+const JOBS_CHANNEL = 'jobsChannel'; // Use the same channel name as the publisher
+// const QUOTE_QUEUE = 'quoteQueue'; // Removed
+// const DATA_QUEUE = 'dataQueue'; // Removed
 
 // Helper function mirroring the Java example's discount logic
 function getDiscountForRegion (region, logger) {
@@ -26,50 +35,64 @@ function getDiscountForRegion (region, logger) {
   }
 }
 
-async function handleQuoteMessage (message) {
-  console.log('[Worker] Received quote job message');
-  let jobData;
-  try {
-    jobData = JSON.parse(message);
-  } catch (err) {
-    console.error('[Worker] Failed to parse quote job message:', message, err);
-    return; // Cannot proceed
-  }
+async function handleQuoteMessage (jobData) {
+  console.log('[Worker] Handling quote job object');
 
   const { jobId, context, opportunityIds } = jobData;
-  console.log(`[Worker] Processing Quote Job ID: ${jobId}`);
-
-  const sf = AppLinkClient.init(context);
-  const org = sf.context.org;
-  const logger = sf.logger || console; // Use SDK logger if available, else console
-
-  if (!opportunityIds || opportunityIds.length === 0) {
-    logger.warn(`[Worker] No opportunity IDs provided for Job ID: ${jobId}`);
-    return;
-  }
+  const logger = console; // Use console logger
 
   try {
+    // *** Instantiate ContextImpl directly using received context details ***
+    const sfContext = new ContextImpl(
+      context.org.accessToken,
+      context.org.apiVersion,
+      context.requestId || jobId, // Use request ID from context if available, fallback to jobId
+      context.org.namespace,
+      context.org.id,
+      context.org.domainUrl,
+      context.org.user.id,      // Correct path
+      context.org.user.username // Correct path
+    );
+
+    // *** Access APIs via sfContext.org ***
+    if (!sfContext.org || !sfContext.org.dataApi) {
+        logger.error(`[Worker] sfContext.org.dataApi not found after ContextImpl instantiation for Quote Job ID: ${jobId}`);
+        return;
+    }
+    const dataApi = sfContext.org.dataApi;
+
+    console.log(`[Worker] Processing Quote Job ID: ${jobId}`);
+
+    if (!opportunityIds || opportunityIds.length === 0) {
+      logger.warn(`[Worker] No opportunity IDs provided for Job ID: ${jobId}`);
+      return;
+    }
+
     const oppIdList = opportunityIds.map(id => `'${id}'`).join(',');
     logger.info(`[Worker] Querying ${opportunityIds.length} opportunities and their OLIs for Job ID: ${jobId}`);
 
-    // Query Opportunities and related OLIs
     const oppQuery = `
       SELECT Id, Name, AccountId, CloseDate, StageName, Amount, Billing_Region__c,
              (SELECT Id, Product2Id, Quantity, UnitPrice, PricebookEntryId FROM OpportunityLineItems)
       FROM Opportunity
       WHERE Id IN (${oppIdList})
     `;
-    const oppResult = await org.dataApi.query(oppQuery);
+    const oppResult = await dataApi.query(oppQuery);
     const opportunities = oppResult.records;
 
     if (!opportunities || opportunities.length === 0) {
       logger.warn(`[Worker] No opportunities found for IDs: ${opportunityIds.join(', ')} in Job ID: ${jobId}`);
       return;
     }
+    const firstOppId = opportunities[0]?.fields?.Id || opportunities[0]?.fields?.id;
+    if (!firstOppId) {
+        logger.error(`[Worker] First Opportunity record missing fields.Id/fields.id field. Query Result: ${JSON.stringify(oppResult)}`);
+        throw new Error('First Opportunity record missing fields.Id/fields.id field.');
+    }
     logger.info(`[Worker] Found ${opportunities.length} opportunities for Job ID: ${jobId}`);
 
-    const unitOfWork = org.dataApi.newUnitOfWork();
-    const quoteRefs = new Map(); // Map OpportunityId to its Quote reference
+    const unitOfWork = dataApi.newUnitOfWork();
+    const quoteRefs = new Map();
 
     opportunities.forEach(opp => {
       if (!opp.OpportunityLineItems?.records || opp.OpportunityLineItems.records.length === 0) {
@@ -127,7 +150,7 @@ async function handleQuoteMessage (message) {
     }
 
     logger.info(`[Worker] Committing Unit of Work with ${quoteRefs.size} Quotes and related Line Items for Job ID: ${jobId}`);
-    const commitResult = await org.dataApi.commitUnitOfWork(unitOfWork);
+    const commitResult = await dataApi.commitUnitOfWork(unitOfWork);
     logger.info(`[Worker] Unit of Work commit attempted for Job ID: ${jobId}`);
 
     // Process results
@@ -195,8 +218,9 @@ function generateSampleOLIs (createdOppIds, pricebookEntryIds) {
 const BULK_API_POLL_INTERVAL = 5000; // 5 seconds
 const BULK_API_TIMEOUT = 300000; // 5 minutes
 
-// Polls the status of a Bulk API job until completion or timeout
-async function pollBulkJobStatus (jobId, org, logger) {
+// Modified pollBulkJobStatus to accept bulkApi instance
+// No need to pass contextOrg anymore if using the instantiated API client
+async function pollBulkJobStatus (jobId, bulkApi, logger) {
   const startTime = Date.now();
   let jobInfo;
 
@@ -204,7 +228,7 @@ async function pollBulkJobStatus (jobId, org, logger) {
 
   while (Date.now() - startTime < BULK_API_TIMEOUT) {
     try {
-      jobInfo = await org.bulkApi.getInfo(jobId);
+      jobInfo = await bulkApi.getInfo(jobId);
       logger.debug(`[Worker][BulkAPI] Job ${jobId} status: ${jobInfo.state}`);
 
       if (jobInfo.state === 'JobComplete') {
@@ -229,45 +253,86 @@ async function pollBulkJobStatus (jobId, org, logger) {
 }
 
 // --- Main Data Handler (Rewritten for Bulk API) ---
-async function handleDataMessage (message) {
-  console.log(`[Worker] Received data job message`);
-  let jobData;
-  try {
-    jobData = JSON.parse(message);
-  } catch (err) {
-    console.error('[Worker] Failed to parse data job message:', message, err);
-    return; // Cannot proceed
+async function handleDataMessage (jobData) {
+  console.log(`[Worker] Handling data job object`);
+
+  const { jobId: processJobId, context, operation, count = 10 } = jobData;
+
+  // *** Add logging for received context details ***
+  console.log(`[Worker] Received context for Job ID ${processJobId}:`);
+  if (context && context.org) {
+    console.log(`  -> Access Token: ${context.org.accessToken ? 'Present' : 'MISSING'}`);
+    console.log(`  -> Domain URL: ${context.org.domainUrl || 'MISSING'}`);
+    console.log(`  -> API Version: ${context.org.apiVersion || 'MISSING'}`);
+    // Avoid logging the full token for security, just confirm presence
+  } else {
+    console.log('  -> Context or context.org is MISSING!');
+    return; // Cannot proceed without context
   }
 
-  const { jobId: processJobId, context, operation, count = 10 } = jobData; // Rename jobId to avoid clash
-  console.log(`[Worker] Processing Data Job ID: ${processJobId}, Operation: ${operation}, Count: ${count}`);
-
-  const sf = AppLinkClient.init(context);
-  const org = sf.context.org;
-  const logger = sf.logger || console;
+  const logger = console; // Use console logger
 
   try {
+    // *** Instantiate ContextImpl directly using received context details ***
+    const sfContext = new ContextImpl(
+      context.org.accessToken,
+      context.org.apiVersion,
+      context.requestId || processJobId, // Use request ID from context if available, fallback to jobId
+      context.org.namespace,
+      context.org.id,
+      context.org.domainUrl,
+      context.org.user.id,      // Correct path
+      context.org.user.username // Correct path
+    );
+
+    // *** Access APIs via sfContext.org ***
+    if (!sfContext.org || !sfContext.org.dataApi || !sfContext.org.bulkApi) {
+        logger.error(`[Worker] sfContext.org.dataApi or sfContext.org.bulkApi not found after ContextImpl instantiation for Data Job ID: ${processJobId}`);
+        return;
+    }
+    const dataApi = sfContext.org.dataApi;
+    const bulkApi = sfContext.org.bulkApi;
+
+    console.log(`[Worker] Processing Data Job ID: ${processJobId}, Operation: ${operation}, Count: ${count}`);
+
     if (operation === 'create') {
       logger.info(`[Worker] Starting data creation via Bulk API for Job ID: ${processJobId}, Count: ${count}`);
 
-      // 1. Prerequisites (same as before)
+      // 1. Prerequisites (use dataApi)
       logger.info(`[Worker] Fetching prerequisites for Job ID: ${processJobId}`);
-      const accounts = await org.dataApi.query("SELECT Id FROM Account LIMIT 1");
-      if (!accounts?.records?.[0]?.Id) throw new Error('No Account found.');
-      const accountId = accounts.records[0].Id;
+      let accounts;
+      try {
+        logger.info('[Worker] Attempting: dataApi.query("SELECT Id FROM Account LIMIT 1")');
+        accounts = await dataApi.query("SELECT Id FROM Account LIMIT 1");
+        logger.info(`[Worker] Raw result from Account query: ${JSON.stringify(accounts, null, 2)}`);
+      } catch (queryError) {
+        logger.error({ err: queryError }, '[Worker] Error during dataApi.query for Account');
+        // Rethrow or handle as appropriate - for now, let the main catch handle it
+        throw queryError;
+      }
+
+      if (!(accounts?.records?.[0]?.fields?.Id || accounts?.records?.[0]?.fields?.id)) {
+          const reason = !accounts ? 'Query result is null/undefined'
+                       : !accounts.records ? 'Query result missing \'records\' property'
+                       : accounts.records.length === 0 ? 'Query returned 0 records'
+                       : 'First record missing fields.Id/fields.id property';
+          logger.error(`[Worker] No Account found. Reason: ${reason}. Check preceding raw query result log.`);
+          throw new Error(`No Account found. Reason: ${reason}`);
+      }
+      const accountId = accounts.records[0].fields.Id || accounts.records[0].fields.id;
       logger.info(`[Worker] Using Account ID: ${accountId} for Job ID: ${processJobId}`);
 
-      const standardPricebook = await org.dataApi.query("SELECT Id FROM Pricebook2 WHERE IsStandard = true LIMIT 1");
-      if (!standardPricebook?.records?.[0]?.Id) throw new Error('Standard Pricebook not found.');
-      const standardPricebookId = standardPricebook.records[0].Id;
+      const standardPricebook = await dataApi.query("SELECT Id FROM Pricebook2 WHERE IsStandard = true LIMIT 1");
+      if (!(standardPricebook?.records?.[0]?.fields?.Id || standardPricebook?.records?.[0]?.fields?.id)) { throw new Error('Standard Pricebook not found or missing Id.'); }
+      const standardPricebookId = standardPricebook.records[0].fields.Id || standardPricebook.records[0].fields.id;
 
-      const pbes = await org.dataApi.query(`SELECT Id FROM PricebookEntry WHERE Pricebook2Id = '${standardPricebookId}' AND IsActive = true LIMIT 10`);
-      if (!pbes?.records || pbes.records.length === 0) throw new Error('No active Pricebook Entries found.');
-      const pricebookEntryIds = pbes.records.map(pbe => pbe.Id);
+      const pbes = await dataApi.query(`SELECT Id FROM PricebookEntry WHERE Pricebook2Id = '${standardPricebookId}' AND IsActive = true LIMIT 10`);
+      if (!pbes?.records || pbes.records.length === 0) { throw new Error('No active Pricebook Entries found.'); }
+      const pricebookEntryIds = pbes.records.map(pbe => pbe?.fields?.Id || pbe?.fields?.id).filter(id => id);
+      if (pricebookEntryIds.length === 0) { throw new Error('No valid Pricebook Entry Ids found.'); }
       logger.info(`[Worker] Found ${pricebookEntryIds.length} PBEs from Standard Pricebook for Job ID: ${processJobId}`);
 
-
-      // --- Create Opportunities via Bulk API ---
+      // --- Create Opportunities via Bulk API (use bulkApi) ---
       logger.info(`[Worker][BulkAPI] Preparing Opportunity creation job for Job ID: ${processJobId}`);
       const oppsToCreate = generateSampleOpportunities(count, accountId, standardPricebookId);
 
@@ -280,18 +345,16 @@ async function handleDataMessage (message) {
       });
       oppDataTable.columns = oppColumns; // Add the columns property
 
-      // const oppDataTable = org.bulkApi.createDataTableBuilder('Opportunity', oppsToCreate); // Incorrect - Builder not exported
-      const oppIngestJobId = await org.bulkApi.ingest({ object: 'Opportunity', dataTable: oppDataTable }); // Pass dataTable in options
+      const oppIngestJobId = await bulkApi.ingest({ object: 'Opportunity', dataTable: oppDataTable });
       logger.info(`[Worker][BulkAPI] Submitted Opportunity creation job ${oppIngestJobId} for Job ID: ${processJobId}`);
 
-      // Poll Opportunity job
-      const oppJobInfo = await pollBulkJobStatus(oppIngestJobId, org, logger);
+      // Pass bulkApi to pollBulkJobStatus (no contextOrg needed)
+      const oppJobInfo = await pollBulkJobStatus(oppIngestJobId, bulkApi, logger);
       logger.info(`[Worker][BulkAPI] Opportunity creation job ${oppIngestJobId} completed. State: ${oppJobInfo.state}, Records Processed: ${oppJobInfo.numberRecordsProcessed}, Failed: ${oppJobInfo.numberRecordsFailed}`);
 
       if (oppJobInfo.numberRecordsFailed > 0) {
-          // Optionally fetch failed records details
           try {
-              const failedRecords = await org.bulkApi.getFailedResults(oppIngestJobId);
+              const failedRecords = await bulkApi.getFailedResults(oppIngestJobId);
               logger.warn(`[Worker][BulkAPI] Opportunity creation job ${oppIngestJobId} had ${oppJobInfo.numberRecordsFailed} failures. Details:`, failedRecords);
           } catch(failErr) {
               logger.error({err: failErr}, `[Worker][BulkAPI] Error fetching failed results for job ${oppIngestJobId}`);
@@ -303,14 +366,13 @@ async function handleDataMessage (message) {
           return;
       }
 
-      // --- Create OLIs via Bulk API ---
+      // --- Create OLIs via Bulk API (use bulkApi) ---
       // Need to get IDs of successfully created Opportunities first
       logger.info(`[Worker][BulkAPI] Fetching successful results for Opportunity job ${oppIngestJobId}`);
       let successfulOppIds = [];
        try {
-            const successfulRecords = await org.bulkApi.getSuccessfulResults(oppIngestJobId);
-            // Assuming successfulRecords is an array of objects like { sf__Id: '...', ... }
-            successfulOppIds = successfulRecords.map(rec => rec.sf__Id).filter(id => id); // Extract IDs
+            const successfulRecords = await bulkApi.getSuccessfulResults(oppIngestJobId);
+            successfulOppIds = successfulRecords.map(rec => rec.sf__Id).filter(id => id);
             logger.info(`[Worker][BulkAPI] Extracted ${successfulOppIds.length} successful Opportunity IDs for Job ID: ${processJobId}`);
        } catch(successErr) {
            logger.error({err: successErr}, `[Worker][BulkAPI] Error fetching successful results for Opportunity job ${oppIngestJobId}. Cannot create OLIs.`);
@@ -337,16 +399,15 @@ async function handleDataMessage (message) {
           });
           oliDataTable.columns = oliColumns; // Add the columns property
 
-          // const oliDataTable = org.bulkApi.createDataTableBuilder('OpportunityLineItem', olisToCreate); // Incorrect
-          const oliIngestJobId = await org.bulkApi.ingest({ object: 'OpportunityLineItem', dataTable: oliDataTable }); // Pass dataTable in options
+          const oliIngestJobId = await bulkApi.ingest({ object: 'OpportunityLineItem', dataTable: oliDataTable });
           logger.info(`[Worker][BulkAPI] Submitted OLI creation job ${oliIngestJobId} for Job ID: ${processJobId}`);
 
-          // Poll OLI job
-          const oliJobInfo = await pollBulkJobStatus(oliIngestJobId, org, logger);
+          // Pass bulkApi to pollBulkJobStatus (no contextOrg needed)
+          const oliJobInfo = await pollBulkJobStatus(oliIngestJobId, bulkApi, logger);
            logger.info(`[Worker][BulkAPI] OLI creation job ${oliIngestJobId} completed. State: ${oliJobInfo.state}, Records Processed: ${oliJobInfo.numberRecordsProcessed}, Failed: ${oliJobInfo.numberRecordsFailed}`);
           if (oliJobInfo.numberRecordsFailed > 0) {
               try {
-                 const failedRecords = await org.bulkApi.getFailedResults(oliIngestJobId);
+                 const failedRecords = await bulkApi.getFailedResults(oliIngestJobId);
                  logger.warn(`[Worker][BulkAPI] OLI creation job ${oliIngestJobId} had ${oliJobInfo.numberRecordsFailed} failures. Details:`, failedRecords);
               } catch(failErr) {
                  logger.error({err: failErr}, `[Worker][BulkAPI] Error fetching failed results for OLI job ${oliIngestJobId}`);
@@ -356,7 +417,6 @@ async function handleDataMessage (message) {
 
       logger.info(`[Worker][BulkAPI] Completed data creation process for Job ID: ${processJobId}`);
 
-
     } else if (operation === 'delete') {
       logger.info(`[Worker] Starting data deletion via Bulk API for Job ID: ${processJobId}`);
 
@@ -364,13 +424,13 @@ async function handleDataMessage (message) {
       const MAX_DELETE_QUERY = 5000; // Limit query size
       const oppsToDeleteQuery = `SELECT Id FROM Opportunity WHERE Name LIKE 'Sample Opp %' LIMIT ${MAX_DELETE_QUERY}`;
       logger.info(`[Worker][BulkAPI] Querying up to ${MAX_DELETE_QUERY} Opportunities for deletion: ${oppsToDeleteQuery} for Job ID: ${processJobId}`);
-      const oppsToDeleteResult = await org.dataApi.query(oppsToDeleteQuery);
+      const oppsToDeleteResult = await dataApi.query(oppsToDeleteQuery);
 
       if (!oppsToDeleteResult?.records || oppsToDeleteResult.records.length === 0) {
         logger.info(`[Worker][BulkAPI] No sample Opportunities found to delete for Job ID: ${processJobId}`);
         return;
       }
-      const oppIdsToDelete = oppsToDeleteResult.records.map(opp => ({ Id: opp.Id })); // Format for Bulk API {Id: '...'}
+      const oppIdsToDelete = oppsToDeleteResult.records.map(opp => ({ Id: opp?.fields?.Id || opp?.fields?.id })).filter(item => item.Id);
       logger.info(`[Worker][BulkAPI] Found ${oppIdsToDelete.length} Opportunities to delete for Job ID: ${processJobId}`);
 
       logger.info(`[Worker][BulkAPI] Preparing Opportunity deletion job for Job ID: ${processJobId}`);
@@ -385,16 +445,16 @@ async function handleDataMessage (message) {
        });
        deleteDataTable.columns = deleteColumns; // Add the columns property
 
-      // Assuming ingest takes an operation type, if not, the builder might handle it
-      const deleteIngestJobId = await org.bulkApi.ingest({ object: 'Opportunity', operation: 'hardDelete', dataTable: deleteDataTable }); // Specify hardDelete in options
+      // *** Use bulkApi.ingest ***
+      const deleteIngestJobId = await bulkApi.ingest({ object: 'Opportunity', operation: 'hardDelete', dataTable: deleteDataTable });
       logger.info(`[Worker][BulkAPI] Submitted Opportunity deletion job ${deleteIngestJobId} for Job ID: ${processJobId}`);
 
-      // Poll Deletion job
-      const deleteJobInfo = await pollBulkJobStatus(deleteIngestJobId, org, logger);
+      // Pass bulkApi to pollBulkJobStatus (no contextOrg needed)
+      const deleteJobInfo = await pollBulkJobStatus(deleteIngestJobId, bulkApi, logger);
       logger.info(`[Worker][BulkAPI] Deletion job ${deleteIngestJobId} completed. State: ${deleteJobInfo.state}, Records Processed: ${deleteJobInfo.numberRecordsProcessed}, Failed: ${deleteJobInfo.numberRecordsFailed}`);
        if (deleteJobInfo.numberRecordsFailed > 0) {
            try {
-              const failedRecords = await org.bulkApi.getFailedResults(deleteIngestJobId);
+              const failedRecords = await bulkApi.getFailedResults(deleteIngestJobId);
               logger.warn(`[Worker][BulkAPI] Deletion job ${deleteIngestJobId} had ${deleteJobInfo.numberRecordsFailed} failures. Details:`, failedRecords);
            } catch(failErr) {
               logger.error({err: failErr}, `[Worker][BulkAPI] Error fetching failed results for deletion job ${deleteIngestJobId}`);
@@ -413,52 +473,80 @@ async function handleDataMessage (message) {
   }
 }
 
-async function listenToQueue (queueName, handler) {
-  console.log(`[Worker] Listening to queue: ${queueName}`);
-  // Use a blocking pop (BLPOP) to wait for messages indefinitely
-  // Adjust timeout (0 means wait forever) and error handling as needed
-  while (true) {
-    try {
-      const result = await redisClient.blpop(queueName, 0);
-      if (result && result.length === 2) {
-        const message = result[1]; // blpop returns [queueName, message]
-        await handler(message);
-      }
-    } catch (error) {
-      console.error(`[Worker] Error listening to ${queueName}:`, error);
-      // Implement backoff strategy before retrying
-      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds before retrying
+// --- Pub/Sub Message Handler ---
+async function handleJobMessage (channel, message) {
+  if (channel !== JOBS_CHANNEL) {
+    // Ignore messages from other channels if any
+    return;
+  }
+
+  console.log(`[Worker] Received message from channel: ${channel}`);
+  let jobData;
+  try {
+    jobData = JSON.parse(message);
+  } catch (err) {
+    console.error('[Worker] Failed to parse job message:', message, err);
+    return; // Cannot proceed
+  }
+
+  // Determine which handler to call based on payload
+  // Use the 'jobType' field we added in the publisher
+  try {
+    if (jobData.jobType === 'quote') {
+      console.log(`[Worker] Routing job ${jobData.jobId} to handleQuoteMessage`);
+      await handleQuoteMessage(jobData); // Pass the parsed jobData object
+    } else if (jobData.jobType === 'data') {
+      console.log(`[Worker] Routing job ${jobData.jobId} to handleDataMessage`);
+      await handleDataMessage(jobData); // Pass the parsed jobData object
+    } else {
+      console.warn(`[Worker] Received job with unknown jobType:`, jobData);
     }
+  } catch (handlerError) {
+    console.error({ err: handlerError, jobId: jobData?.jobId, jobType: jobData?.jobType }, `[Worker] Error executing handler for job`);
   }
 }
 
 async function startWorker () {
-  console.log('[Worker] Starting...');
+  console.log('[Worker] Starting (Pub/Sub mode)...');
 
-  // Ensure Redis client is connected before starting listeners
+  // Ensure the MAIN Redis client is connected before subscribing
   if (redisClient.status !== 'ready') {
     console.log('[Worker] Redis client not ready, waiting for ready event...');
     await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Redis connection timeout')), 10000); // 10s timeout
+      const timeout = setTimeout(() => reject(new Error('Redis connection timeout')), 10000);
       redisClient.once('ready', () => {
         clearTimeout(timeout);
         resolve();
       });
       redisClient.once('error', (err) => {
         clearTimeout(timeout);
-        reject(err); // Reject on error during initial connection
+        reject(err);
       });
     });
   }
   console.log('[Worker] Redis client connected.');
 
-  // Start listening to queues concurrently
-  console.log(`[Worker] Listening for messages on ${QUOTE_QUEUE}...`);
-  console.log(`[Worker] Listening for messages on ${DATA_QUEUE}...`);
-  await Promise.all([
-    listenToQueue(QUOTE_QUEUE, handleQuoteMessage),
-    listenToQueue(DATA_QUEUE, handleDataMessage)
-  ]);
+  // Remove check for blocking client
+  // console.log('[Worker] Blocking Redis client connected.');
+
+  // Subscribe to the jobs channel
+  redisClient.subscribe(JOBS_CHANNEL, (err, count) => {
+    if (err) {
+      console.error(`[Worker] Failed to subscribe to ${JOBS_CHANNEL}:`, err);
+      // Handle subscription error (e.g., exit or retry)
+      process.exit(1);
+    }
+    console.log(`[Worker] Subscribed successfully to ${JOBS_CHANNEL}. Listener count: ${count}`);
+  });
+
+  // Set up the message listener
+  redisClient.on('message', handleJobMessage);
+
+  console.log(`[Worker] Subscribed to ${JOBS_CHANNEL} and waiting for messages...`);
 }
 
-startWorker();
+startWorker()
+  .catch(err => {
+    console.error('[Worker] Critical error during startup:', err);
+    process.exit(1);
+  });

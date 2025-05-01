@@ -1,7 +1,9 @@
 import fp from 'fastify-plugin';
 // Correctly import from CJS module in ESM
-import pkg from '@heroku/salesforce-sdk-nodejs';
-const { AppLinkClient } = pkg;
+// Try direct default import first
+import AppLinkClient from '@heroku/salesforce-sdk-nodejs';
+// import pkg from '@heroku/salesforce-sdk-nodejs';
+// const { AppLinkClient } = pkg;
 
 /**
  * Fastify plugin to initialize the Salesforce AppLink SDK

@@ -1,8 +1,10 @@
 import crypto from 'node:crypto';
 import redisClient from '../config/redis.js'; // Adjusted path
 
-const QUOTE_QUEUE = 'quoteQueue';
-const DATA_QUEUE = 'dataQueue';
+// Define a single channel for all job types
+const JOBS_CHANNEL = 'jobsChannel';
+// const QUOTE_QUEUE = 'quoteQueue'; // No longer needed
+// const DATA_QUEUE = 'dataQueue'; // No longer needed
 
 // Define schemas for request validation and Swagger generation
 const executeBatchSchema = {
@@ -46,9 +48,9 @@ const dataCreateSchema = {
   summary: 'Submit Sample Data Creation Job',
   body: {
     type: 'object',
-    required: ['count'],
+    required: [],
     properties: {
-      count: { type: 'integer', minimum: 1, description: 'Number of sample Opportunity records to create' }
+      count: { type: 'integer', minimum: 1, default: 10, description: 'Number of sample Opportunity records to create (defaults to 10)' }
     }
   }
 };
@@ -66,43 +68,52 @@ const dataDeleteSchema = {
  */
 export default async function apiRoutes (fastify, opts) {
   // === Helper Function ===
-  async function publishJob (request, reply, queueName, payload) {
+  // Updated to use PUBLISH instead of LPUSH
+  async function publishJob (request, reply, payload) {
     if (!request.salesforce || !request.salesforce.context) {
       return reply.code(401).send({ error: 'Salesforce context not found. Ensure x-client-context header is provided.' });
     }
+
+    // Log the context object before publishing
+    request.log.info({ salesforceContext: request.salesforce.context }, 'Salesforce context before publishing job');
 
     const jobId = crypto.randomUUID();
     const jobPayload = JSON.stringify({
       jobId,
       context: request.salesforce.context,
-      ...payload // Include specific payload data
+      ...payload // Include specific payload data (like operation, count, soqlWhereClause)
     });
 
     try {
-      await redisClient.lpush(queueName, jobPayload);
-      request.log.info({ jobId, queue: queueName, payload }, 'Job published to Redis queue');
+      // Use PUBLISH instead of LPUSH
+      const receivers = await redisClient.publish(JOBS_CHANNEL, jobPayload);
+      request.log.info({ jobId, channel: JOBS_CHANNEL, payload, receivers }, `Job published to Redis channel ${JOBS_CHANNEL}. Receivers: ${receivers}`);
       return reply.code(202).send({ jobId }); // Respond with 202 Accepted and Job ID
     } catch (error) {
-      request.log.error({ err: error, jobId, queue: queueName }, 'Failed to publish job to Redis');
-      return reply.code(500).send({ error: 'Failed to queue job.' });
+      request.log.error({ err: error, jobId, channel: JOBS_CHANNEL }, 'Failed to publish job to Redis channel');
+      return reply.code(500).send({ error: 'Failed to publish job.' });
     }
   }
 
   // === Routes ===
+  // Routes now call publishJob without specifying queueName
 
   fastify.post('/executebatch', { schema: executeBatchSchema }, async (request, reply) => {
     const { soqlWhereClause } = request.body;
-    await publishJob(request, reply, QUOTE_QUEUE, { soqlWhereClause });
+    // Payload now needs to implicitly define the job type for the subscriber
+    await publishJob(request, reply, { jobType: 'quote', soqlWhereClause });
   });
 
   fastify.post('/data/create', { schema: dataCreateSchema }, async (request, reply) => {
-    const { count } = request.body;
-    await publishJob(request, reply, DATA_QUEUE, { operation: 'create', count });
+    const count = request.body?.count ?? dataCreateSchema.body.properties.count.default ?? 10;
+    // Add jobType to distinguish
+    await publishJob(request, reply, { jobType: 'data', operation: 'create', count });
   });
 
   fastify.post('/data/delete', { schema: dataDeleteSchema }, async (request, reply) => {
-    await publishJob(request, reply, DATA_QUEUE, { operation: 'delete' });
+    // Add jobType to distinguish
+    await publishJob(request, reply, { jobType: 'data', operation: 'delete' });
   });
 
-  fastify.log.info('API routes registered.');
+  fastify.log.info('API routes registered for Pub/Sub.');
 }
