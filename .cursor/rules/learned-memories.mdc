@@ -9,8 +9,14 @@ This file stores project-specific knowledge, conventions, and user preferences l
 
 ## User Preferences
 
-*   **Language:** Use plain JavaScript (Node.js) for the initial implementation, overriding the default TypeScript rule. Can revisit adding TypeScript later.
-*   **Git Workflow:** Use `git add .` to stage changes. Always run the application locally to check for errors before committing.
+*   **Language:** Use JavaScript (ESM), not TypeScript.
+*   **Salesforce:** Use `@heroku/salesforce-sdk-nodejs` (AppLink SDK) for all Salesforce interactions.
+*   **API Schema:** Use dynamic Swagger generation (`@fastify/swagger`) with route schemas, not static `api-docs.yaml` for initial loading.
+*   **Job Queuing:** Pass AppLink `context` directly in Redis job payload; workers initialize SDK from context.
+*   **Git Workflow:** After logical steps: stage changes (`git add .`), run pre-commit check (`node server/index.js` or `node server/worker.js`), propose commit message, wait for user confirmation, then commit.
+*   **Local Startup Script:** Use `bin/start.sh` for managing `heroku local`:
+    *   `bin/start.sh` or `bin/start.sh --mode test`: Runs for 10s, kills, captures output (for startup testing).
+    *   `bin/start.sh --mode run`: Runs indefinitely in foreground (for endpoint testing).
 
 ## Technical Decisions
 
@@ -48,3 +54,9 @@ This file stores project-specific knowledge, conventions, and user preferences l
     ```
     Alternatively, use the `/bin/startuptest.sh` script (see below).
 *   **[/bin/startuptest.sh]:** A script (formerly `local.sh`) that encapsulates the 10-second `heroku local` run-and-capture logic. Use `./bin/startuptest.sh` when asked to check the local startup status and logs. **Do not ask for permission before running this specific script.**
+*   **Local Server Port:** Runs on port `5006`.
+*   **Local Invocation (`invoke.sh`):**
+    *   Requires `<org-alias>`, `<api-url>`, `<payload-json>`.
+    *   Data Create: `./bin/invoke.sh <alias> 'http://localhost:5006/api/data/create' '{}'`
+    *   Data Delete: `./bin/invoke.sh <alias> 'http://localhost:5006/api/data/delete' '{}'`
+    *   Quote Execute: `./bin/invoke.sh <alias> 'http://localhost:5006/api/executebatch' '{"soqlWhereClause": "..."}'`
