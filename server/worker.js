@@ -218,17 +218,29 @@ function generateSampleOLIs (createdOppIds, pricebookEntryIds) {
 const BULK_API_POLL_INTERVAL = 5000; // 5 seconds
 const BULK_API_TIMEOUT = 300000; // 5 minutes
 
-// Modified pollBulkJobStatus to accept bulkApi instance
-// No need to pass contextOrg anymore if using the instantiated API client
-async function pollBulkJobStatus (jobId, bulkApi, logger) {
-  const startTime = Date.now();
+// Ensure the function accepts the job reference *object*
+async function pollBulkJobStatus (jobReference, bulkApi, logger) {
   let jobInfo;
+  const startTime = Date.now();
 
-  logger.info(`[Worker][BulkAPI] Starting to poll status for Job ID: ${jobId}`);
+  // Log the ID from the reference object
+  const jobId = jobReference.id;
+  logger.info(`[Worker][BulkAPI] Starting to poll status for Job ID: ${jobId} (Type: ${jobReference.type})`);
 
   while (Date.now() - startTime < BULK_API_TIMEOUT) {
     try {
-      jobInfo = await bulkApi.getInfo(jobId);
+      logger.info(`[Worker][BulkAPI] Polling job with ID: ${jobId}`);
+      // *** Pass the full jobReference object to getInfo ***
+      jobInfo = await bulkApi.getInfo(jobReference);
+      logger.info({ rawJobInfo: jobInfo }, `[Worker][BulkAPI] Raw result from bulkApi.getInfo for job ${jobId}`);
+
+      if (!jobInfo) {
+          logger.error(`[Worker][BulkAPI] bulkApi.getInfo(${jobId}) returned undefined.`);
+          // Consider retrying after a delay or throwing immediately
+          // For now, let's throw to make the failure clear
+          throw new Error(`bulkApi.getInfo(${jobId}) returned undefined.`);
+      }
+
       logger.debug(`[Worker][BulkAPI] Job ${jobId} status: ${jobInfo.state}`);
 
       if (jobInfo.state === 'JobComplete') {
@@ -345,42 +357,64 @@ async function handleDataMessage (jobData) {
       });
       oppDataTable.columns = oppColumns; // Add the columns property
 
-      const oppIngestJobId = await bulkApi.ingest({ object: 'Opportunity', dataTable: oppDataTable });
-      logger.info(`[Worker][BulkAPI] Submitted Opportunity creation job ${oppIngestJobId} for Job ID: ${processJobId}`);
+      // Call ingest, add operation, and capture the full result array
+      const oppIngestResult = await bulkApi.ingest({ object: 'Opportunity', operation: 'insert', dataTable: oppDataTable });
+      logger.info({ oppIngestResult }, `[Worker][BulkAPI] Raw result from Opportunity ingest call.`);
 
-      // Pass bulkApi to pollBulkJobStatus (no contextOrg needed)
-      const oppJobInfo = await pollBulkJobStatus(oppIngestJobId, bulkApi, logger);
-      logger.info(`[Worker][BulkAPI] Opportunity creation job ${oppIngestJobId} completed. State: ${oppJobInfo.state}, Records Processed: ${oppJobInfo.numberRecordsProcessed}, Failed: ${oppJobInfo.numberRecordsFailed}`);
+      // Check for errors and extract the actual Job Reference *object*
+      let oppJobReference;
+      if (Array.isArray(oppIngestResult) && oppIngestResult[0]?.error) {
+          logger.error({ errorDetails: oppIngestResult[0].error }, `[Worker][BulkAPI] bulkApi.ingest for Opportunities failed.`);
+          throw new Error(`bulkApi.ingest for Opportunities failed.`);
+      } else if (Array.isArray(oppIngestResult) && oppIngestResult[0]?.id && oppIngestResult[0]?.type) {
+          oppJobReference = oppIngestResult[0]; // Assign the object
+      } else {
+          logger.error({ oppIngestResult }, `[Worker][BulkAPI] bulkApi.ingest for Opportunities returned unexpected structure.`);
+          throw new Error('bulkApi.ingest for Opportunities returned unexpected structure.');
+      }
+
+      // Log the Job ID from the extracted object
+      logger.info(`[Worker][BulkAPI] Submitted Opportunity creation job with ID: ${oppJobReference.id} for main Job ID: ${processJobId}`);
+
+      // Pass the full job reference object and bulkApi to pollBulkJobStatus
+      const oppJobInfo = await pollBulkJobStatus(oppJobReference, bulkApi, logger);
+      logger.info(`[Worker][BulkAPI] Opportunity creation job ${oppJobReference.id} completed. State: ${oppJobInfo.state}, Records Processed: ${oppJobInfo.numberRecordsProcessed}, Failed: ${oppJobInfo.numberRecordsFailed}`);
 
       if (oppJobInfo.numberRecordsFailed > 0) {
           try {
-              const failedRecords = await bulkApi.getFailedResults(oppIngestJobId);
-              logger.warn(`[Worker][BulkAPI] Opportunity creation job ${oppIngestJobId} had ${oppJobInfo.numberRecordsFailed} failures. Details:`, failedRecords);
+              // Pass the job reference object
+              const failedRecords = await bulkApi.getFailedResults(oppJobReference);
+              logger.warn(`[Worker][BulkAPI] Opportunity creation job ${oppJobReference.id} had ${oppJobInfo.numberRecordsFailed} failures. Details:`, failedRecords);
           } catch(failErr) {
-              logger.error({err: failErr}, `[Worker][BulkAPI] Error fetching failed results for job ${oppIngestJobId}`);
+              logger.error({err: failErr}, `[Worker][BulkAPI] Error fetching failed results for job ${oppJobReference.id}`);
           }
       }
 
       if (oppJobInfo.numberRecordsProcessed === 0 || oppJobInfo.numberRecordsProcessed === oppJobInfo.numberRecordsFailed) {
-          logger.error(`[Worker][BulkAPI] No Opportunities successfully created by job ${oppIngestJobId}. Aborting OLI creation for Job ID: ${processJobId}.`);
+          logger.error(`[Worker][BulkAPI] No Opportunities successfully created by job ${oppJobReference.id}. Aborting OLI creation for Job ID: ${processJobId}.`);
           return;
       }
 
       // --- Create OLIs via Bulk API (use bulkApi) ---
       // Need to get IDs of successfully created Opportunities first
-      logger.info(`[Worker][BulkAPI] Fetching successful results for Opportunity job ${oppIngestJobId}`);
+      logger.info(`[Worker][BulkAPI] Fetching successful results for Opportunity job ${oppJobReference.id}`);
       let successfulOppIds = [];
        try {
-            const successfulRecords = await bulkApi.getSuccessfulResults(oppIngestJobId);
-            successfulOppIds = successfulRecords.map(rec => rec.sf__Id).filter(id => id);
+            // Pass the job reference object
+            const successfulRecords = await bulkApi.getSuccessfulResults(oppJobReference);
+            // *** Log the raw successfulRecords structure ***
+            logger.info({ successfulRecords }, `[Worker][BulkAPI] Raw result from getSuccessfulResults for Opp job ${oppJobReference.id}`);
+            // *** End log ***
+            // *** Use Map.get() to access the ID ***
+            successfulOppIds = successfulRecords.map(rec => rec.get('sf__Id')).filter(id => id);
             logger.info(`[Worker][BulkAPI] Extracted ${successfulOppIds.length} successful Opportunity IDs for Job ID: ${processJobId}`);
        } catch(successErr) {
-           logger.error({err: successErr}, `[Worker][BulkAPI] Error fetching successful results for Opportunity job ${oppIngestJobId}. Cannot create OLIs.`);
+           logger.error({err: successErr}, `[Worker][BulkAPI] Error fetching successful results for Opportunity job ${oppJobReference.id}. Cannot create OLIs.`);
            return; // Cannot proceed without Opp IDs
        }
 
        if (successfulOppIds.length === 0) {
-            logger.warn(`[Worker][BulkAPI] No successful Opportunity IDs retrieved from job ${oppIngestJobId}. Cannot create OLIs for Job ID: ${processJobId}.`);
+            logger.warn(`[Worker][BulkAPI] No successful Opportunity IDs retrieved from job ${oppJobReference.id}. Cannot create OLIs for Job ID: ${processJobId}.`);
             return;
        }
 
@@ -399,19 +433,43 @@ async function handleDataMessage (jobData) {
           });
           oliDataTable.columns = oliColumns; // Add the columns property
 
-          const oliIngestJobId = await bulkApi.ingest({ object: 'OpportunityLineItem', dataTable: oliDataTable });
-          logger.info(`[Worker][BulkAPI] Submitted OLI creation job ${oliIngestJobId} for Job ID: ${processJobId}`);
+          // Call ingest, add operation, and capture the full result array
+          const oliIngestResult = await bulkApi.ingest({ object: 'OpportunityLineItem', operation: 'insert', dataTable: oliDataTable });
+          logger.info({ oliIngestResult }, `[Worker][BulkAPI] Raw result from OLI ingest call.`);
 
-          // Pass bulkApi to pollBulkJobStatus (no contextOrg needed)
-          const oliJobInfo = await pollBulkJobStatus(oliIngestJobId, bulkApi, logger);
-           logger.info(`[Worker][BulkAPI] OLI creation job ${oliIngestJobId} completed. State: ${oliJobInfo.state}, Records Processed: ${oliJobInfo.numberRecordsProcessed}, Failed: ${oliJobInfo.numberRecordsFailed}`);
-          if (oliJobInfo.numberRecordsFailed > 0) {
-              try {
-                 const failedRecords = await bulkApi.getFailedResults(oliIngestJobId);
-                 logger.warn(`[Worker][BulkAPI] OLI creation job ${oliIngestJobId} had ${oliJobInfo.numberRecordsFailed} failures. Details:`, failedRecords);
-              } catch(failErr) {
-                 logger.error({err: failErr}, `[Worker][BulkAPI] Error fetching failed results for OLI job ${oliIngestJobId}`);
+          // Check for errors and extract the actual Job Reference *object*
+          let oliJobReference;
+          if (Array.isArray(oliIngestResult) && oliIngestResult[0]?.error) {
+              logger.error({ errorDetails: oliIngestResult[0].error }, `[Worker][BulkAPI] bulkApi.ingest for OLIs failed.`);
+              // Decide if this should throw or just warn
+              logger.warn(`[Worker][BulkAPI] OLI creation job submission failed.`);
+          } else if (Array.isArray(oliIngestResult) && oliIngestResult[0]?.id && oliIngestResult[0]?.type) {
+              oliJobReference = oliIngestResult[0]; // Assign the object
+          } else {
+              logger.error({ oliIngestResult }, `[Worker][BulkAPI] bulkApi.ingest for OLIs returned unexpected structure.`);
+              // Decide if this should throw or just warn
+              logger.warn(`[Worker][BulkAPI] OLI creation job submission returned unexpected structure.`);
+          }
+
+          // Only proceed if we got a valid job reference
+          if (oliJobReference) {
+              // Log the Job ID from the extracted object
+              logger.info(`[Worker][BulkAPI] Submitted OLI creation job with ID: ${oliJobReference.id} for main Job ID: ${processJobId}`);
+
+              // Pass the full job reference object and bulkApi to pollBulkJobStatus
+              const oliJobInfo = await pollBulkJobStatus(oliJobReference, bulkApi, logger);
+              logger.info(`[Worker][BulkAPI] OLI creation job ${oliJobReference.id} completed. State: ${oliJobInfo.state}, Records Processed: ${oliJobInfo.numberRecordsProcessed}, Failed: ${oliJobInfo.numberRecordsFailed}`);
+              if (oliJobInfo.numberRecordsFailed > 0) {
+                  try {
+                     // Pass the job reference object
+                     const failedRecords = await bulkApi.getFailedResults(oliJobReference);
+                     logger.warn(`[Worker][BulkAPI] OLI creation job ${oliJobReference.id} had ${oliJobInfo.numberRecordsFailed} failures. Details:`, failedRecords);
+                  } catch(failErr) {
+                     logger.error({err: failErr}, `[Worker][BulkAPI] Error fetching failed results for OLI job ${oliJobReference.id}`);
+                  }
               }
+          } else {
+             logger.warn(`[Worker][BulkAPI] Skipping OLI job polling because submission failed or returned invalid reference.`);
           }
       }
 
@@ -445,19 +503,35 @@ async function handleDataMessage (jobData) {
        });
        deleteDataTable.columns = deleteColumns; // Add the columns property
 
-      // *** Use bulkApi.ingest ***
-      const deleteIngestJobId = await bulkApi.ingest({ object: 'Opportunity', operation: 'hardDelete', dataTable: deleteDataTable });
-      logger.info(`[Worker][BulkAPI] Submitted Opportunity deletion job ${deleteIngestJobId} for Job ID: ${processJobId}`);
+      // Call ingest, ensure operation is correct, and capture the full result array
+      const deleteIngestResult = await bulkApi.ingest({ object: 'Opportunity', operation: 'hardDelete', dataTable: deleteDataTable });
+      logger.info({ deleteIngestResult }, `[Worker][BulkAPI] Raw result from Deletion ingest call.`);
 
-      // Pass bulkApi to pollBulkJobStatus (no contextOrg needed)
-      const deleteJobInfo = await pollBulkJobStatus(deleteIngestJobId, bulkApi, logger);
-      logger.info(`[Worker][BulkAPI] Deletion job ${deleteIngestJobId} completed. State: ${deleteJobInfo.state}, Records Processed: ${deleteJobInfo.numberRecordsProcessed}, Failed: ${deleteJobInfo.numberRecordsFailed}`);
+      // Check for errors and extract the actual Job Reference *object*
+      let deleteJobReference;
+      if (Array.isArray(deleteIngestResult) && deleteIngestResult[0]?.error) {
+          logger.error({ errorDetails: deleteIngestResult[0].error }, `[Worker][BulkAPI] bulkApi.ingest for Deletion failed.`);
+          throw new Error(`bulkApi.ingest for Deletion failed.`);
+      } else if (Array.isArray(deleteIngestResult) && deleteIngestResult[0]?.id && deleteIngestResult[0]?.type) {
+          deleteJobReference = deleteIngestResult[0]; // Assign the object
+      } else {
+          logger.error({ deleteIngestResult }, `[Worker][BulkAPI] bulkApi.ingest for Deletion returned unexpected structure.`);
+          throw new Error('bulkApi.ingest for Deletion returned unexpected structure.');
+      }
+
+      // Log the Job ID from the extracted object
+      logger.info(`[Worker][BulkAPI] Submitted Deletion job with ID: ${deleteJobReference.id} for main Job ID: ${processJobId}`);
+
+      // Pass the full job reference object and bulkApi to pollBulkJobStatus
+      const deleteJobInfo = await pollBulkJobStatus(deleteJobReference, bulkApi, logger);
+      logger.info(`[Worker][BulkAPI] Deletion job ${deleteJobReference.id} completed. State: ${deleteJobInfo.state}, Records Processed: ${deleteJobInfo.numberRecordsProcessed}, Failed: ${deleteJobInfo.numberRecordsFailed}`);
        if (deleteJobInfo.numberRecordsFailed > 0) {
            try {
-              const failedRecords = await bulkApi.getFailedResults(deleteIngestJobId);
-              logger.warn(`[Worker][BulkAPI] Deletion job ${deleteIngestJobId} had ${deleteJobInfo.numberRecordsFailed} failures. Details:`, failedRecords);
+              // Pass the job reference object
+              const failedRecords = await bulkApi.getFailedResults(deleteJobReference);
+              logger.warn(`[Worker][BulkAPI] Deletion job ${deleteJobReference.id} had ${deleteJobInfo.numberRecordsFailed} failures. Details:`, failedRecords);
            } catch(failErr) {
-              logger.error({err: failErr}, `[Worker][BulkAPI] Error fetching failed results for deletion job ${deleteIngestJobId}`);
+              logger.error({err: failErr}, `[Worker][BulkAPI] Error fetching failed results for deletion job ${deleteJobReference.id}`);
            }
        }
 
