@@ -75,23 +75,26 @@ Response from server:
 Review the log output from the `heroku local` process and you will see output similar to the following (timestamps and specific IDs will vary):
 
 ```
-web.1    | PricingEngineService : Received Opportunity data creation request
-web.1    | PricingEngineService : Job enqueued with ID: b7bfb6bd-8db8-4e4f-b0ad-c98966e91dde for message: create to channel: dataQueue
-worker.1 | SampleDataWorkerService : Worker received job with ID: b7bfb6bd-8db8-4e4f-b0ad-c98966e91dde for data operation: create
-worker.1 | SampleDataWorkerService : Created Bulk Job for Opportunity: Job ID = 750am00000LrWbxAAF
-worker.1 | SampleDataWorkerService : Submitted batch for Job ID 750am00000LrWbxAAF: Batch ID = 751am00000Lh7LYAAZ
-worker.1 | SampleDataWorkerService : Batch 751am00000Lh7LYAAZ - State: InProgress
-worker.1 | SampleDataWorkerService : Batch 751am00000Lh7LYAAZ - State: Completed
-worker.1 | SampleDataWorkerService : Batch processing complete.
-worker.1 | SampleDataWorkerService : Closed Bulk Job: 750am00000LrWbxAAF
-worker.1 | SampleDataWorkerService : Opportunities created successfully.
-worker.1 | SampleDataWorkerService : Created Bulk Job for OpportunityLineItem: Job ID = 750am00000LrKNxAAN
-worker.1 | SampleDataWorkerService : Submitted batch for Job ID 750am00000LrKNxAAN: Batch ID = 751am00000LhIyUAAV
-worker.1 | SampleDataWorkerService : Batch 751am00000LhIyUAAV - State: InProgress
-worker.1 | SampleDataWorkerService : Batch 751am00000LhIyUAAV - State: Completed
-worker.1 | SampleDataWorkerService : Batch processing complete.
-worker.1 | SampleDataWorkerService : Closed Bulk Job: 750am00000LrKNxAAN
-worker.1 | SampleDataWorkerService : Opportunity Products created successfully.
+web.1    | Job published to Redis channel jobsChannel...
+worker.1 | Worker received job with ID: b63e2cbd-cb6a-4be9-b2e1-0b1ab928938b for data operation: create
+worker.1 | Starting data creation via Bulk API v2 for Job ID: b63e2cbd-cb6a-4be9-b2e1-0b1ab928938b, Count: 10
+worker.1 | Preparing Bulk API v2 Opportunity creation job for Job ID: b63e2cbd-cb6a-4be9-b2e1-0b1ab928938b
+worker.1 | Submitted Bulk API v2 Opportunity creation job with ID: 750am00000Q3m1BAAR...
+worker.1 | Polling Bulk API v2 job status for Job ID: 750am00000Q3m1BAAR...
+worker.1 | Bulk API v2 Job 750am00000Q3m1BAAR status: UploadComplete
+worker.1 | Bulk API v2 Job 750am00000Q3m1BAAR status: InProgress
+worker.1 | Bulk API v2 Job 750am00000Q3m1BAAR status: JobComplete
+worker.1 | Bulk API v2 Job 750am00000Q3m1BAAR processing complete.
+worker.1 | Opportunity creation job 750am00000Q3m1BAAR completed. State: JobComplete, Processed: 10, Failed: 0
+worker.1 | Extracted 10 successful Opportunity IDs for Job ID: b63e2cbd-cb6a-4be9-b2e1-0b1ab928938b
+worker.1 | Preparing Bulk API v2 OLI creation job for 10 Opportunities...
+worker.1 | Submitted Bulk API v2 OLI creation job with ID: 750am00000Q3zmNAAR...
+worker.1 | Polling Bulk API v2 job status for Job ID: 750am00000Q3zmNAAR...
+worker.1 | Bulk API v2 Job 750am00000Q3zmNAAR status: InProgress
+worker.1 | Bulk API v2 Job 750am00000Q3zmNAAR status: JobComplete
+worker.1 | Bulk API v2 Job 750am00000Q3zmNAAR processing complete.
+worker.1 | OLI creation job 750am00000Q3zmNAAR completed. State: JobComplete, Processed: 20, Failed: 0
+worker.1 | Job processing completed for Job ID: b63e2cbd-cb6a-4be9-b2e1-0b1ab928938b
 ```
 
 Finally navigate to the **Opportunities** tab in your Salesforce org and you should see something like the following
@@ -110,14 +113,12 @@ Run the following command to execute a batch job to generate **Quote** records f
 Observe the log output from `heroku local` and you will see output similar to the following:
 
 ```
-web.1    | PricingEngineService : Received generate Quotes request for Opportunities matching: Name LIKE 'Sample Opportunity%'
-web.1    | PricingEngineService : Job enqueued with ID: cfb56b17-b2f5-433a-b8df-ea27574a350b for message: Name LIKE 'Sample Opportunity%' to channel: quoteQueue
-worker.1 | PricingEngineWorkerService : Worker received job with ID: cfb56b17-b2f5-433a-b8df-ea27574a350b for SOQL WHERE clause: Name LIKE 'Sample Opportunity%'
-worker.1 | PricingEngineWorkerService : Worker executing batch for Job ID: cfb56b17-b2f5-433a-b8df-ea27574a350b with WHERE clause: Name LIKE 'Sample Opportunity%'
-worker.1 | PricingEngineWorkerService : Processing 100 Opportunities
-worker.1 | PricingEngineWorkerService : Performing bulk insert for 100 Quotes
-worker.1 | PricingEngineWorkerService : Performing bulk insert for 200 QuoteLineItems
-worker.1 | PricingEngineWorkerService : Job processing completed for Job ID: cfb56b17-b2f5-433a-b8df-ea27574a350b
+web.1    | Job published to Redis channel jobsChannel...
+worker.1 | Worker received job with ID: 778412d8-f56f-4a11-ad62-09174339e5f9 for SOQL WHERE clause: Name LIKE 'Sample Opp %'
+worker.1 | Worker executing batch for Job ID: 778412d8-f56f-4a11-ad62-09174339e5f9 with WHERE clause: Name LIKE 'Sample Opp %'
+worker.1 | Processing 10 Opportunities
+worker.1 | Submitting UnitOfWork to create 10 Quotes and 20 Line Items
+worker.1 | Job processing completed for Job ID: 778412d8-f56f-4a11-ad62-09174339e5f9. Results: 10 succeeded, 0 failed.
 ```
 
 Navigate to the **Quotes** tab in your org to review the generates records:
@@ -185,7 +186,9 @@ As noted in the [Extending Apex, Flow and Agentforce](https://github.com/heroku-
 ```
 echo \
 "ExternalService.GenerateQuoteJob service = new ExternalService.GenerateQuoteJob();" \
-"System.debug('Quote Id: ' + service.datacreate().Code200.jobId);" \
+"ExternalService.GenerateQuoteJob.datacreate_Request request = new ExternalService.GenerateQuoteJob.datacreate_Request();" \
+"request.body = new ExternalService.GenerateQuoteJob_datacreate_IN_body();" \
+"System.debug('Quote Id: ' + service.datacreate(request).Code202.jobId);" \
 | sf apex run -o my-org
 ```
 
@@ -199,9 +202,9 @@ echo \
 "ExternalService.GenerateQuoteJob service = new ExternalService.GenerateQuoteJob();" \
 "ExternalService.GenerateQuoteJob.executeBatch_Request request = new ExternalService.GenerateQuoteJob.executeBatch_Request();" \
 "ExternalService.GenerateQuoteJob_BatchExecutionRequest body = new ExternalService.GenerateQuoteJob_BatchExecutionRequest();" \
-"body.soqlWhereClause = 'Name LIKE \\\\'Sample Opportunity%\\\\'';" \
+"body.soqlWhereClause = 'Name LIKE \\\\'Sample Opp %\\\\'';" \
 "request.body = body;" \
-"System.debug('Quote Id: ' + service.executeBatch(request).Code200.jobId);" \
+"System.debug('Quote Id: ' + service.executeBatch(request).Code202.jobId);" \
 | sf apex run -o my-org
 ```
 
@@ -224,22 +227,25 @@ If you have deployed the application, run the following:
 ```
 echo \
 "ExternalService.GenerateQuoteJob service = new ExternalService.GenerateQuoteJob();" \
-"System.debug('Quote Id: ' + service.datadelete().Code200.jobId);" \
+"System.debug('Quote Id: ' + service.datadelete().Code202.jobId);" \
 | sf apex run -o my-org
 ```
 
 Observe the log output from the `heroku local` or `heroku logs --tail` commands and you will see output similar to the following
 
 ```
-web.1    | PricingEngineService : Received data deletion request
-web.1    | PricingEngineService : Job enqueued with ID: fb4aeba1-a4d5-4f07-8477-1b26bd9b297f for message: delete to channel: dataQueue
-worker.1 | SampleDataWorkerService : Worker received job with ID: fb4aeba1-a4d5-4f07-8477-1b26bd9b297f for data operation: delete
-worker.1 | SampleDataWorkerService : Submitted batch for Job ID 750am00000Lr8MkAAJ: Batch ID = 751am00000LhOSqAAN
-worker.1 | SampleDataWorkerService : Batch 751am00000LhOSqAAN - State: InProgress
-worker.1 | SampleDataWorkerService : Batch 751am00000LhOSqAAN - State: Completed
-worker.1 | SampleDataWorkerService : Batch processing complete.
-worker.1 | SampleDataWorkerService : Closed Bulk Job: 750am00000Lr8MkAAJ
-worker.1 | SampleDataWorkerService : Opportunities deleted successfully.
+web.1    | Job published to Redis channel jobsChannel...
+worker.1 | Worker received job with ID: 55610381-55f8-4a05-8550-158f6410663b for data operation: delete
+worker.1 | Starting data deletion via Bulk API v2 for Job ID: 55610381-55f8-4a05-8550-158f6410663b
+worker.1 | Found 10 Opportunities to delete for Job ID: 55610381-55f8-4a05-8550-158f6410663b
+worker.1 | Preparing Bulk API v2 Opportunity deletion job for Job ID: 55610381-55f8-4a05-8550-158f6410663b
+worker.1 | Submitted Bulk API v2 Deletion job with ID: 750am00000Q3uV1AAJ...
+worker.1 | Polling Bulk API v2 job status for Job ID: 750am00000Q3uV1AAJ...
+worker.1 | Bulk API v2 Job 750am00000Q3uV1AAJ status: UploadComplete
+worker.1 | Bulk API v2 Job 750am00000Q3uV1AAJ status: InProgress
+worker.1 | Bulk API v2 Job 750am00000Q3uV1AAJ status: JobComplete
+worker.1 | Bulk API v2 Job 750am00000Q3uV1AAJ processing complete.
+55610381-55f8-4a05-8550-158f6410663b
 ```
 
 # Technical Information

@@ -4,6 +4,7 @@ import swaggerUi from '@fastify/swagger-ui';
 import config from './config/index.js';
 import salesforcePlugin from './middleware/salesforce.js';
 import apiRoutes from './routes/api.js';
+import formbody from '@fastify/formbody';
 
 // === Shared Schemas ===
 // Define reusable schemas as constants
@@ -121,6 +122,9 @@ fastify.register(swaggerUi, {
 // Register Salesforce middleware globally
 // This will run the preHandler for every request
 fastify.register(salesforcePlugin);
+
+// Register formbody plugin
+fastify.register(formbody);
 
 // Placeholder for health check
 fastify.get('/health', async (request, reply) => {
