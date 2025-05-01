@@ -57,10 +57,13 @@ Open a new terminal window and enter the following command to start a job that g
 ```sh
 # Use the invoke script (replace my-org with your org alias)
 # Target: POST /api/data/create
-./bin/invoke.sh my-org 'http://localhost:5006/api/data/create' '{}'
+./bin/invoke.sh my-org 'http://localhost:5000/api/data/create' '{}'
 ```
 
-> The default is to create 10 Opportunities, however if you want to experiment with more use the `count` parameter: `http://localhost:5006/api/data/create?count=100`
+> The default is to create 10 Opportunities. To specify a different number, include `count` in the JSON payload, e.g., to create 100:
+> ```sh
+> ./bin/invoke.sh my-org 'http://localhost:5000/api/data/create' '{"count": 100}'
+> ```
 
 This will respond with a job Id, as shown in the example below:
 
@@ -101,7 +104,7 @@ Run the following command to execute a batch job to generate **Quote** records f
 
 ```sh
 # Target: POST /api/executebatch
-./bin/invoke.sh my-org http://localhost:5001/api/executebatch '{"soqlWhereClause": "Name LIKE '\''Sample Opp %'\''"}'
+./bin/invoke.sh my-org http://localhost:5000/api/executebatch '{"soqlWhereClause": "Name LIKE '\''Sample Opp %'\''"}'
 ```
 
 Observe the log output from `heroku local` and you will see output similar to the following:
@@ -213,7 +216,7 @@ If you are running application locally, run the following command to execute a b
 
 ```sh
 # Target: POST /api/data/delete
-./bin/invoke.sh my-org http://localhost:5001/api/data/delete '{}'
+./bin/invoke.sh my-org http://localhost:5000/api/data/delete '{}'
 ```
 
 If you have deployed the application, run the following:
@@ -242,20 +245,20 @@ worker.1 | SampleDataWorkerService : Opportunities deleted successfully.
 # Technical Information
 - The [Heroku Key Value Store](https://elements.heroku.com/addons/heroku-redis) add-on (Heroku Redis) is used to manage two channels (`quoteQueue`, `dataQueue`) that act as queues for sample data and quote generation jobs. The `mini` tier of this [add-on](https://devcenter.heroku.com/articles/heroku-redis) can be used for this sample. Redis connection details are managed via environment variables (typically set in `.env` locally or via Heroku Config Vars).
 - Node.js and the `Procfile` define the `web` and `worker` process types. The `web` process runs the Fastify server (`server/index.js`) handling API requests, while the `worker` process (`server/worker.js`) listens to the Redis queues and executes jobs.
-- The quote generation logic in `server/worker.js` (`handleQuoteMessage`) uses the AppLink SDK's Data API and Unit of Work pattern (`org.dataApi.newUnitOfWork`, `commitUnitOfWork`) to insert **Quote** and **QuoteLineItem** records together within a single transaction, ensuring atomicity.
+- The quote generation logic in `server/services/quote.js` uses the AppLink SDK's Data API and Unit of Work pattern (`org.dataApi.newUnitOfWork`, `commitUnitOfWork`) to insert **Quote** and **QuoteLineItem** records together within a single transaction, ensuring atomicity.
 - The `invoke.sh` script relies on the `x-client-context` header being correctly passed for authentication when running locally. The main `Procfile` is used for deployment, which incorporates the Heroku Integration service mesh.
-- The worker logic in `server/worker.js` (`handleQuoteMessage`, `handleDataMessage`) extracts org authentication details (client context) passed from the API layer (`web` process) via the Redis job payload.
+- The main worker process (`server/worker.js`) receives job messages via Redis, extracts and initializes the Salesforce context, and then delegates the core processing logic (using the context) to handlers defined in `server/services/quote.js` and `server/services/data.js`.
 - The [Heroku Connect](https://elements.heroku.com/addons/herokuconnect) add-on can be used as an alternative to reading and/or writing to an org via [Heroku Postgres](https://elements.heroku.com/addons/heroku-postgresql). This is an option to consider if your use case does not fit within the [Salesforce API limitations](https://developer.salesforce.com/docs/atlas.en-us.salesforce_app_limits_cheatsheet.meta/salesforce_app_limits_cheatsheet). In this case note that there will be some lag between data changes and updates in the Salesforce org caused by the nature of the synchronization pattern used by Heroku Connect. If this is acceptable this option will further increase performance. Of course a hybrid of using the Salesforce API for certain data access needs and Heroku Connect for others is also possible.
 - This sample uses [Salesforce API Query More](https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/resources_query_more_results.htm) pattern implicitly via the AppLink SDK's `org.dataApi.query` method when retrieving large datasets.
-- To create sample data (`handleDataMessage` in `server/worker.js`), the AppLink SDK's Bulk API v2 (`org.bulkApi`) is used for efficient handling of potentially large volumes.
-- **An informal execution time comparison.** The pricing calculation logic is intentionally simple for the purposes of ensuring the technical aspects of using the Heroku Integration in this context are made clear. As the compute requirements fit within Apex limits, it was possible to create an Apex version of the job logic (originally included in the Java version's `/src-org` folder). While not a formal benchmark, execution time over 5000 opportunities took ~24 seconds using the Heroku job approach vs ~150 seconds to run with Batch Apex, **an improvement of 144% in execution time**. During testing it was observed that this was largely due in this case to the longer dequeue times with Batch Apex vs being near instant with a Heroku worker.
+- To create sample data (`handleDataMessage` in `server/services/data.js`), the AppLink SDK's Bulk API v2 (`org.bulkApi`) is used for efficient handling of potentially large volumes.
+- **An informal execution time comparison.** The pricing calculation logic is intentionally simple for the purposes of ensuring the technical aspects of using the Heroku Integration in this context are made clear. As the compute requirements fit within Apex limits, it was possible to create an Apex version of the job logic (originally included in the Java version's `/src-org` folder). While not a formal benchmark, execution time over 5000 opportunities took ~24 seconds using the Heroku job approach vs ~150 seconds to run with Batch Apex, **an improvement of 144% in execution time**. During testing (of the Java version) it was observed that this was largely due in this case to the longer dequeue times with Batch Apex vs being near instant with a Heroku worker.
 
 Other Samples
 -------------
 
 | Sample | What it covers? |
 | ------ | --------------- |
-| [Salesforce API Access - Java](https://github.com/heroku-examples/heroku-integration-pattern-api-access-java) | This sample application showcases how to extend a Heroku web application by integrating it with Salesforce APIs, enabling seamless data exchange and automation across multiple connected Salesforce orgs. It also includes a demonstration of the Salesforce Bulk API, which is optimized for handling large data volumes efficiently. |
-| [Extending Apex, Flow and Agentforce - Java](https://github.com/heroku-examples/heroku-integration-pattern-org-action-java) | This sample demonstrates importing a Heroku application into an org to enable Apex, Flow, and Agentforce to call out to Heroku. For Apex, both synchronous and asynchronous invocation are demonstrated, along with securely elevating Salesforce permissions for processing that requires additional object or field access. |
-| [Scaling Batch Jobs with Heroku - Java](https://github.com/heroku-examples/heroku-integration-pattern-org-job-java) | This sample seamlessly delegates the processing of large amounts of data with significant compute requirements to Heroku Worker processes. It also demonstrates the use of the Unit of Work aspect of the SDK (JavaScript only for the pilot) for easier utilization of the Salesforce Composite APIs. |
-| [Using Eventing to drive Automation and Communication](https://github.com/heroku-examples/heroku-integration-pattern-eventing-java) | This sample extends the batch job sample by adding the ability to use eventing to start the work and notify users once it completes using Custom Notifications. These notifications are sent to the user's desktop or mobile device running Salesforce Mobile. Flow is used in this sample to demonstrate how processing can be handed off to low-code tools such as Flow. |
+| [Salesforce API Access](https://github.com/heroku-examples/heroku-integration-pattern-api-access-nodejs) | This sample application showcases how to extend a Heroku web application by integrating it with Salesforce APIs, enabling seamless data exchange and automation across multiple connected Salesforce orgs. It also includes a demonstration of the Salesforce Bulk API, which is optimized for handling large data volumes efficiently. |
+| [Extending Apex, Flow and Agentforce](https://github.com/heroku-examples/heroku-integration-pattern-org-action-nodejs) | This sample demonstrates importing a Heroku application into an org to enable Apex, Flow, and Agentforce to call out to Heroku. For Apex, both synchronous and asynchronous invocation are demonstrated, along with securely elevating Salesforce permissions for processing that requires additional object or field access. |
+| [Scaling Batch Jobs with Heroku](https://github.com/heroku-examples/heroku-integration-pattern-org-job-nodejs) | This sample seamlessly delegates the processing of large amounts of data with significant compute requirements to Heroku Worker processes. It also demonstrates the use of the Unit of Work aspect of the SDK (JavaScript only for the pilot) for easier utilization of the Salesforce Composite APIs. |
+| [Using Eventing to drive Automation and Communication](https://github.com/heroku-examples/heroku-integration-pattern-eventing-nodejs) | This sample extends the batch job sample by adding the ability to use eventing to start the work and notify users once it completes using Custom Notifications. These notifications are sent to the user's desktop or mobile device running Salesforce Mobile. Flow is used in this sample to demonstrate how processing can be handed off to low-code tools such as Flow. |
