@@ -11,6 +11,8 @@ const executeBatchSchema = {
   // description: 'Submits a batch pricing job for opportunities matching the SOQL WHERE clause.',
   tags: ['Pricing Engine'],
   summary: 'Submit Batch Pricing Job',
+  description: "Calculate pricing and generate quotes from Opportunities queried using the SOQL WHERE clause.",
+  operationId: 'executeBatch',
   body: {
     type: 'object',
     required: ['soqlWhereClause'],
@@ -46,6 +48,8 @@ const dataOperationSchema = {
 const dataCreateSchema = {
   ...dataOperationSchema,
   summary: 'Submit Sample Data Creation Job',
+  description: "Starts a job to create a large amount of Opportunity records.",
+  operationId: 'datacreate',
   body: {
     type: 'object',
     required: [],
@@ -57,7 +61,9 @@ const dataCreateSchema = {
 
 const dataDeleteSchema = {
   ...dataOperationSchema,
-  summary: 'Submit Sample Data Deletion Job'
+  summary: 'Submit Sample Data Deletion Job',
+  description: "Starts a job to delete generate Quotes",
+  operationId: 'datadelete'
   // No body required for delete operation in this example
 };
 
