@@ -1,39 +1,9 @@
 'use strict';
 
 import redisClient from './config/redis.js';
-// We don't need AppLinkClient import here anymore, we need ContextImpl
-// import AppLinkClient from '@heroku/salesforce-sdk-nodejs';
 import { ContextImpl } from '@heroku/salesforce-sdk-nodejs/dist/sdk/context.js';
-// import pkg from '@heroku/salesforce-sdk-nodejs';
-// const { AppLinkClient } = pkg;
-// import Redis from 'ioredis'; // No longer need Redis import here
-// import config from './config/index.js'; // No longer need config import here
-
-// Remove dedicated blocking client
-// const blockingRedisClient = new Redis(...)
 
 const JOBS_CHANNEL = 'jobsChannel'; // Use the same channel name as the publisher
-// const QUOTE_QUEUE = 'quoteQueue'; // Removed
-// const DATA_QUEUE = 'dataQueue'; // Removed
-
-// Helper function mirroring the Java example's discount logic
-function getDiscountForRegion (region, logger) {
-  // Basic discount logic based on region
-  switch (region) {
-    case 'NAMER':
-      logger?.info(`[Worker] Applying NAMER discount for region: ${region}`);
-      return 0.1; // 10%
-    case 'EMEA':
-      logger?.info(`[Worker] Applying EMEA discount for region: ${region}`);
-      return 0.15; // 15%
-    case 'APAC':
-      logger?.info(`[Worker] Applying APAC discount for region: ${region}`);
-      return 0.08; // 8%
-    default:
-      logger?.warn(`[Worker] No specific discount for region: ${region}, applying default.`);
-      return 0.05; // 5%
-  }
-}
 
 // Import the service handlers
 import { handleDataMessage } from './services/data.js';

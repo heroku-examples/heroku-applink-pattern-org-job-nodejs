@@ -1,9 +1,5 @@
 import fp from 'fastify-plugin';
-// Correctly import from CJS module in ESM
-// Try direct default import first
 import AppLinkClient from '@heroku/salesforce-sdk-nodejs';
-// import pkg from '@heroku/salesforce-sdk-nodejs';
-// const { AppLinkClient } = pkg;
 
 /**
  * Fastify plugin to initialize the Salesforce AppLink SDK
@@ -22,7 +18,6 @@ async function salesforceMiddlewarePlugin (fastify, opts) {
   fastify.decorateRequest('salesforce', null);
 
   // Add preHandler hook to parse Salesforce context for every request
-  // Note: Consider making this route-specific if not all routes need Salesforce context
   fastify.addHook('preHandler', async (request, reply) => {
     // Check if the x-client-context header exists before attempting to parse
     if (!request.headers || !request.headers['x-client-context']) {

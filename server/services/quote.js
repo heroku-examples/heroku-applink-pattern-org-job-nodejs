@@ -58,19 +58,12 @@ async function handleQuoteMessage (jobData, sfContext, logger) {
     `; // Use the provided WHERE clause
     const oppResult = await dataApi.query(oppQuery);
     const opportunities = oppResult.records;
-
     if (!opportunities || opportunities.length === 0) {
       logger.warn(`No Opportunities or related OpportunityLineItems found for WHERE clause: ${soqlWhereClause}`);
       return;
     }
-    // Access fields using .fields property
-    const firstOppRecord = opportunities[0]?.fields;
-    if (!firstOppRecord?.Id && !firstOppRecord?.id) {
-        logger.error(`First Opportunity record missing fields.Id/fields.id field. Query Result: ${JSON.stringify(oppResult)}`);
-        throw new Error('First Opportunity record missing fields.Id/fields.id field.');
-    }
+    
     logger.info(`Processing ${opportunities.length} Opportunities`);
-
     const unitOfWork = dataApi.newUnitOfWork();
     const quoteRefs = new Map();
     let totalLineItems = 0;
