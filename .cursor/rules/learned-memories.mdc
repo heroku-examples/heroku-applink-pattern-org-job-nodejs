@@ -10,21 +10,30 @@ This file stores project-specific knowledge, conventions, and user preferences l
 ## User Preferences
 
 *   **Language:** Use plain JavaScript (Node.js) for the initial implementation, overriding the default TypeScript rule. Can revisit adding TypeScript later.
-*   **Git Workflow:**
-    -   Prefer staging changes with `git add .` instead of individual files.
-    -   **Pre-commit Check:** Before staging/committing, run the relevant script (`npm run dev` for server, `npm run worker` for worker) in the foreground. Check terminal output for immediate exit errors. If no immediate errors occur and standard startup logs appear (e.g., 'Server listening...', '[Worker] Redis client connected.'), consider the basic startup check successful and proceed with staging/commit. No need to wait for the process to fully exit or be killed.
+*   **Git Workflow:** Use `git add .` to stage changes. Always run the application locally to check for errors before committing.
 
 ## Technical Decisions
 
-*   **Salesforce Interaction:** Use the `@heroku/salesforce-sdk-nodejs` (AppLink SDK) for all Salesforce interactions.
-*   **Quote Generation:** Replicate Java logic using AppLink SDK `DataApi` and `UnitOfWork`.
-*   **Sample Data Operations:** Replicate Java logic using AppLink SDK `BulkApi` features (`org.bulkApi`).
+*   **CSS Framework:** None specified yet.
+*   **Salesforce SDK:** Using `@heroku/salesforce-sdk-nodejs@0.3.4-ea`.
+    *   Supports Data API (`org.dataApi`) for CRUD and Unit of Work.
+    *   Supports Bulk API v2 (`org.bulkApi`) methods like `ingest`, `getInfo`, `getSuccessfulResults`, `getFailedResults`, `query`, `abort`, `delete`.
+    *   **Bulk Ingestion:** The `org.bulkApi.ingest` method expects a `dataTable` object. This object should be an array where each element is a `Map` representing a row (key=column name, value=field value). The object must also have a `columns` property which is an array of the column header strings. The SDK handles CSV conversion internally; there is **no exported `createDataTableBuilder` method**. (Note: internal `createDataTableBuilder` exists but is not exposed).
+*   **Package Manager:** Use `pnpm`.
 *   **Redis Usage:** Use `ioredis` for connecting to Redis and employ Redis Pub/Sub for job queuing between the `web` and `worker` processes.
 *   **CSS Framework:** Tailwind v4 is used. Ensure usage aligns with v4 documentation and practices, noting differences from v3.
 *   **Bulk API:** Use `org.bulkApi` methods (`createDataTableBuilder`, `ingest`, `getInfo`, `getFailedResults`, etc.) for bulk operations via AppLink SDK.
-*   **AppLink SDK Node.js Example:** Refer to [heroku-integration-pattern-api-access-nodejs/index.js](https://github.com/heroku-examples/heroku-integration-pattern-api-access-nodejs/blob/main/index.js) for usage patterns.
-*   **Java Quote Worker Reference:** Refer to [PricingEngineWorkerService.java](https://github.com/heroku-examples/heroku-integration-pattern-org-job-java/blob/main/src/main/java/com/heroku/java/services/PricingEngineWorkerService.java) for original quote logic.
-*   **Java Data Worker Reference:** Refer to [SampleDataWorkerService.java](https://github.com/heroku-examples/heroku-integration-pattern-org-job-java/blob/main/src/main/java/com/heroku/java/services/SampleDataWorkerService.java) for original data generation/deletion logic.
+*   **AppLink SDK Node.js Example:** Refer to [heroku-integration-pattern-api-access-nodejs/index.js](mdc:https:/github.com/heroku-examples/heroku-integration-pattern-api-access-nodejs/blob/main/index.js) for usage patterns.
+*   **Java Quote Worker Reference:** Refer to [PricingEngineWorkerService.java](mdc:https:/github.com/heroku-examples/heroku-integration-pattern-org-job-java/blob/main/src/main/java/com/heroku/java/services/PricingEngineWorkerService.java) for original quote logic.
+*   **Java Data Worker Reference:** Refer to [SampleDataWorkerService.java](mdc:https:/github.com/heroku-examples/heroku-integration-pattern-org-job-java/blob/main/src/main/java/com/heroku/java/services/SampleDataWorkerService.java) for original data generation/deletion logic.
+
+## Project Status (End of Session 2024-08-22)
+
+*   **Core Functionality:** Basic Fastify server (`server/index.js`) and worker (`server/worker.js`) are implemented. Worker handles `quoteQueue` (Data API/UoW) and `dataQueue` (Bulk API). Salesforce middleware is in place.
+*   **Configuration:** Central config (`server/config/index.js`), Redis config (`server/config/redis.js`) with TLS bypass option, `.env` file populated from Heroku (`tranquil-gorge-35248`, `redis-pointy-85355`) and includes `NODE_TLS_REJECT_UNAUTHORIZED=0`.
+*   **Local Testing:** Successfully configured and tested local startup using `heroku local`. Created `bin/startuptest.sh` script to automate checking startup (clears port 5006, runs `heroku local` for 10s, captures logs). Established convention to run this script directly without asking.
+*   **Documentation:** `README.md` updated for Node.js. Task lists `PROJECT_SETUP.md` and `TESTING_STRATEGY.md` are up-to-date.
+*   **Next Step:** Continue with `docs/tasks/TESTING_STRATEGY.md` - specifically, run `./bin/invoke.sh` to test the `POST /api/data/create` endpoint against the locally running application.
 
 ## Project Conventions
 
@@ -33,3 +42,9 @@ This file stores project-specific knowledge, conventions, and user preferences l
 *   **Ignored Java Code:** The Apex class (`OpportunityToQuoteJob.cls`) found in the Java project's `src-org` directory is illustrative only and should not be called or replicated; focus on the logic within the Java worker services.
 *   **README:** The `README.md` should be updated from the Java version to accurately reflect Node.js installation, configuration, and execution steps.
 *   **Code Comments:** Comments should explain the *what* or *why* of the code itself, not the history of changes made by the assistant or reasons for removing old code. Avoid leaving blocks of commented-out code.
+*   **Local Startup Check:** To check if `heroku local` starts successfully and capture initial logs (e.g., for connection errors), use the following command sequence. Note that the direct `cat` output at the end might be empty due to timing; the `read_file` tool should be used on `heroku_local_output.log` immediately afterwards to reliably see the logs.
+    ```bash
+    heroku local > heroku_local_output.log 2>&1 & PID=$!; sleep 10; kill $PID || true; wait $PID 2>/dev/null || true; cat heroku_local_output.log
+    ```
+    Alternatively, use the `/bin/startuptest.sh` script (see below).
+*   **[/bin/startuptest.sh]:** A script (formerly `local.sh`) that encapsulates the 10-second `heroku local` run-and-capture logic. Use `./bin/startuptest.sh` when asked to check the local startup status and logs. **Do not ask for permission before running this specific script.**

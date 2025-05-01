@@ -60,7 +60,8 @@ const start = async () => {
     fastify.log.info(`Server listening on port ${config.port}`);
     fastify.log.info(`Swagger UI available at /docs`);
   } catch (err) {
-    fastify.log.error('Error starting server:', err);
+    // Use Pino's preferred error logging format
+    fastify.log.error({ err: err }, 'Error starting server');
     process.exit(1);
   }
 };

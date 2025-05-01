@@ -4,11 +4,13 @@ import config from './index.js'; // Use import
 // Create a new Redis client instance
 // It will automatically use the REDIS_URL from the environment if available,
 // otherwise, it falls back to the default provided in the config.
-const redisClient = new Redis(config.redisUrl, {
-  // Optional: Add connection options if needed, e.g., TLS for Heroku Redis
-  // tls: config.env === 'production' ? { rejectUnauthorized: false } : undefined,
+const redisClient = new Redis(config.redisUrl || 'redis://127.0.0.1:6379', {
+  // Add TLS options for Heroku Redis connections (especially locally)
+  tls: {
+    rejectUnauthorized: false // Allow self-signed certs (use with caution, okay for local dev)
+  },
   // Keep alive settings
-  keepAlive: 1000 * 60, // Send keepalive ping every 60 seconds
+  keepAlive: 1000 * 30, // Send keepalive probe every 30 seconds.
   // Retry strategy (optional but recommended)
   retryStrategy (times) {
     const delay = Math.min(times * 50, 2000); // Exponential backoff up to 2 seconds

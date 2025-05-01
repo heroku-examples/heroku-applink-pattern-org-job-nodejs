@@ -270,8 +270,18 @@ async function handleDataMessage (message) {
       // --- Create Opportunities via Bulk API ---
       logger.info(`[Worker][BulkAPI] Preparing Opportunity creation job for Job ID: ${processJobId}`);
       const oppsToCreate = generateSampleOpportunities(count, accountId, standardPricebookId);
-      const oppDataTable = org.bulkApi.createDataTableBuilder('Opportunity', oppsToCreate);
-      const oppIngestJobId = await org.bulkApi.ingest(oppDataTable);
+
+      // Manually construct the dataTable object for Opportunities
+      const oppColumns = Object.keys(oppsToCreate[0] || {}); // Get columns from first object
+      const oppDataTable = oppsToCreate.map(opp => {
+          const rowMap = new Map();
+          oppColumns.forEach(col => rowMap.set(col, opp[col]));
+          return rowMap;
+      });
+      oppDataTable.columns = oppColumns; // Add the columns property
+
+      // const oppDataTable = org.bulkApi.createDataTableBuilder('Opportunity', oppsToCreate); // Incorrect - Builder not exported
+      const oppIngestJobId = await org.bulkApi.ingest({ object: 'Opportunity', dataTable: oppDataTable }); // Pass dataTable in options
       logger.info(`[Worker][BulkAPI] Submitted Opportunity creation job ${oppIngestJobId} for Job ID: ${processJobId}`);
 
       // Poll Opportunity job
@@ -318,8 +328,17 @@ async function handleDataMessage (message) {
       if (olisToCreate.length === 0) {
           logger.info(`[Worker][BulkAPI] No OLIs generated. Skipping OLI creation job for Job ID: ${processJobId}`);
       } else {
-          const oliDataTable = org.bulkApi.createDataTableBuilder('OpportunityLineItem', olisToCreate);
-          const oliIngestJobId = await org.bulkApi.ingest(oliDataTable);
+          // Manually construct the dataTable object for OLIs
+          const oliColumns = Object.keys(olisToCreate[0] || {});
+          const oliDataTable = olisToCreate.map(oli => {
+              const rowMap = new Map();
+              oliColumns.forEach(col => rowMap.set(col, oli[col]));
+              return rowMap;
+          });
+          oliDataTable.columns = oliColumns; // Add the columns property
+
+          // const oliDataTable = org.bulkApi.createDataTableBuilder('OpportunityLineItem', olisToCreate); // Incorrect
+          const oliIngestJobId = await org.bulkApi.ingest({ object: 'OpportunityLineItem', dataTable: oliDataTable }); // Pass dataTable in options
           logger.info(`[Worker][BulkAPI] Submitted OLI creation job ${oliIngestJobId} for Job ID: ${processJobId}`);
 
           // Poll OLI job
@@ -355,9 +374,19 @@ async function handleDataMessage (message) {
       logger.info(`[Worker][BulkAPI] Found ${oppIdsToDelete.length} Opportunities to delete for Job ID: ${processJobId}`);
 
       logger.info(`[Worker][BulkAPI] Preparing Opportunity deletion job for Job ID: ${processJobId}`);
-      const deleteDataTable = org.bulkApi.createDataTableBuilder('Opportunity', oppIdsToDelete);
+      // const deleteDataTable = org.bulkApi.createDataTableBuilder('Opportunity', oppIdsToDelete); // Incorrect
+
+       // Manually construct the dataTable object for Deletion
+       const deleteColumns = ['Id'];
+       const deleteDataTable = oppIdsToDelete.map(opp => {
+           const rowMap = new Map();
+           deleteColumns.forEach(col => rowMap.set(col, opp[col])); // oppIdsToDelete is array of {Id: '...'} 
+           return rowMap;
+       });
+       deleteDataTable.columns = deleteColumns; // Add the columns property
+
       // Assuming ingest takes an operation type, if not, the builder might handle it
-      const deleteIngestJobId = await org.bulkApi.ingest(deleteDataTable, { operation: 'hardDelete' }); // Specify hardDelete
+      const deleteIngestJobId = await org.bulkApi.ingest({ object: 'Opportunity', operation: 'hardDelete', dataTable: deleteDataTable }); // Specify hardDelete in options
       logger.info(`[Worker][BulkAPI] Submitted Opportunity deletion job ${deleteIngestJobId} for Job ID: ${processJobId}`);
 
       // Poll Deletion job
@@ -404,28 +433,32 @@ async function listenToQueue (queueName, handler) {
 }
 
 async function startWorker () {
-  console.log('[Worker] Starting worker process...');
+  console.log('[Worker] Starting...');
 
-  // Wait for Redis client to connect and be ready
-  await new Promise((resolve, reject) => {
-    redisClient.on('ready', () => {
-      console.log('[Worker] Redis client connected.');
-      resolve();
+  // Ensure Redis client is connected before starting listeners
+  if (redisClient.status !== 'ready') {
+    console.log('[Worker] Redis client not ready, waiting for ready event...');
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Redis connection timeout')), 10000); // 10s timeout
+      redisClient.once('ready', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+      redisClient.once('error', (err) => {
+        clearTimeout(timeout);
+        reject(err); // Reject on error during initial connection
+      });
     });
-    redisClient.on('error', (err) => {
-      console.error('[Worker] Redis connection error:', err);
-      reject(err);
-    });
-  });
+  }
+  console.log('[Worker] Redis client connected.');
 
-  // Start listeners for both queues concurrently
-  Promise.all([
+  // Start listening to queues concurrently
+  console.log(`[Worker] Listening for messages on ${QUOTE_QUEUE}...`);
+  console.log(`[Worker] Listening for messages on ${DATA_QUEUE}...`);
+  await Promise.all([
     listenToQueue(QUOTE_QUEUE, handleQuoteMessage),
     listenToQueue(DATA_QUEUE, handleDataMessage)
-  ]).catch(error => {
-    console.error('[Worker] Critical error in listeners:', error);
-    process.exit(1); // Exit if a listener fails critically
-  });
+  ]);
 }
 
 startWorker();
