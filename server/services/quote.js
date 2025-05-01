@@ -5,16 +5,12 @@ function getDiscountForRegion (region, logger) {
   // Basic discount logic based on region
   switch (region) {
     case 'NAMER':
-      logger?.info(`[QuoteService] Applying NAMER discount for region: ${region}`);
       return 0.1; // 10%
     case 'EMEA':
-      logger?.info(`[QuoteService] Applying EMEA discount for region: ${region}`);
       return 0.15; // 15%
     case 'APAC':
-      logger?.info(`[QuoteService] Applying APAC discount for region: ${region}`);
       return 0.08; // 8%
     default:
-      logger?.warn(`[QuoteService] No specific discount for region: ${region}, applying default.`);
       return 0.05; // 5%
   }
 }
@@ -26,40 +22,36 @@ function getDiscountForRegion (region, logger) {
  * @param {object} logger - A logger instance.
  */
 async function handleQuoteMessage (jobData, sfContext, logger) {
-  logger.info('[QuoteService] Handling quote job object');
-
   // *** 1. Use soqlWhereClause instead of opportunityIds ***
   const { jobId, soqlWhereClause } = jobData;
   // Note: context is no longer destructured here, sfContext is passed in
+  logger.info(`Worker received job with ID: ${jobId} for SOQL WHERE clause: ${soqlWhereClause}`);
 
   try {
     // *** Access APIs via sfContext.org ***
     if (!sfContext || !sfContext.org || !sfContext.org.dataApi) {
-        logger.error(`[QuoteService] Invalid sfContext or sfContext.org.dataApi for Quote Job ID: ${jobId}`);
+        logger.error(`Invalid sfContext or sfContext.org.dataApi for Quote Job ID: ${jobId}`);
         return;
     }
     const dataApi = sfContext.org.dataApi;
 
-    logger.info(`[QuoteService] Processing Quote Job ID: ${jobId}`);
+    logger.info(`Worker executing batch for Job ID: ${jobId} with WHERE clause: ${soqlWhereClause}`);
 
     // *** 2. Fetch Standard Pricebook ID ***
-    logger.info(`[QuoteService] Fetching Standard Pricebook ID for Job ID: ${jobId}`);
     const standardPricebookResult = await dataApi.query("SELECT Id FROM Pricebook2 WHERE IsStandard = true LIMIT 1");
     if (!(standardPricebookResult?.records?.[0]?.fields?.Id || standardPricebookResult?.records?.[0]?.fields?.id)) {
-        logger.error(`[QuoteService] Standard Pricebook not found for Job ID: ${jobId}.`);
+        logger.error(`Standard Pricebook not found for Job ID: ${jobId}.`);
         throw new Error('Standard Pricebook not found.');
     }
     const standardPricebookId = standardPricebookResult.records[0].fields.Id || standardPricebookResult.records[0].fields.id;
-    logger.info(`[QuoteService] Found Standard Pricebook ID: ${standardPricebookId} for Job ID: ${jobId}`);
 
     // *** 1. Use soqlWhereClause in the query ***
     if (!soqlWhereClause) {
-      logger.warn(`[QuoteService] No soqlWhereClause provided for Job ID: ${jobId}`);
+      logger.warn(`No soqlWhereClause provided for Job ID: ${jobId}`);
       return;
     }
-    logger.info(`[QuoteService] Querying opportunities and OLIs using WHERE clause: ${soqlWhereClause} for Job ID: ${jobId}`);
     const oppQuery = `
-      SELECT Id, Name, AccountId, CloseDate, StageName, Amount, Billing_Region__c,
+      SELECT Id, Name, AccountId, CloseDate, StageName, Amount,
              (SELECT Id, Product2Id, Quantity, UnitPrice, PricebookEntryId FROM OpportunityLineItems)
       FROM Opportunity
       WHERE ${soqlWhereClause}
@@ -68,19 +60,20 @@ async function handleQuoteMessage (jobData, sfContext, logger) {
     const opportunities = oppResult.records;
 
     if (!opportunities || opportunities.length === 0) {
-      logger.warn(`[QuoteService] No opportunities found for WHERE clause: ${soqlWhereClause} in Job ID: ${jobId}`);
+      logger.warn(`No Opportunities or related OpportunityLineItems found for WHERE clause: ${soqlWhereClause}`);
       return;
     }
     // Access fields using .fields property
     const firstOppRecord = opportunities[0]?.fields;
     if (!firstOppRecord?.Id && !firstOppRecord?.id) {
-        logger.error(`[QuoteService] First Opportunity record missing fields.Id/fields.id field. Query Result: ${JSON.stringify(oppResult)}`);
+        logger.error(`First Opportunity record missing fields.Id/fields.id field. Query Result: ${JSON.stringify(oppResult)}`);
         throw new Error('First Opportunity record missing fields.Id/fields.id field.');
     }
-    logger.info(`[QuoteService] Found ${opportunities.length} opportunities for Job ID: ${jobId}`);
+    logger.info(`Processing ${opportunities.length} Opportunities`);
 
     const unitOfWork = dataApi.newUnitOfWork();
     const quoteRefs = new Map();
+    let totalLineItems = 0;
 
     opportunities.forEach(oppSObject => {
       // Access fields using .fields property
@@ -91,7 +84,7 @@ async function handleQuoteMessage (jobData, sfContext, logger) {
       const lineItemsResult = oppSObject.subQueryResults?.OpportunityLineItems;
 
       if (!lineItemsResult?.records || lineItemsResult.records.length === 0) {
-        logger.warn(`[QuoteService] Opportunity ${oppId} has no line items. Skipping quote creation for Job ID: ${jobId}`);
+        logger.warn(`Opportunity ${oppId} has no line items. Skipping quote creation for Job ID: ${jobId}`);
         return;
       }
 
@@ -101,9 +94,8 @@ async function handleQuoteMessage (jobData, sfContext, logger) {
         const expirationDate = new Date(opp.CloseDate);
         expirationDate.setDate(expirationDate.getDate() + 30); // Quote expires 30 days after CloseDate
 
-        // Calculate discount based on custom field Billing_Region__c
-        // Note: Java version hardcoded region, we use the Opp field
-        const discount = getDiscountForRegion(opp.Billing_Region__c, logger);
+        // Calculate discount based on hardcoded region (matching Java example 'US')
+        const discount = getDiscountForRegion('NAMER', logger); // Use hardcoded region 'NAMER'
 
         const quoteRef = unitOfWork.registerCreate({
           type: 'Quote',
@@ -119,6 +111,8 @@ async function handleQuoteMessage (jobData, sfContext, logger) {
         quoteRefs.set(oppId, quoteRef);
 
         // 2. Create QuoteLineItems from OpportunityLineItems
+        const currentOppLineItemCount = lineItemsResult.records.length;
+        totalLineItems += currentOppLineItemCount;
         lineItemsResult.records.forEach(oliSObject => {
           // Access fields using .fields property
           const oli = oliSObject.fields;
@@ -143,41 +137,41 @@ async function handleQuoteMessage (jobData, sfContext, logger) {
             }
           });
         });
-        logger.info(`[QuoteService] Registered Quote and ${lineItemsResult.records.length} Line Items for Opp ${oppId} in Job ID: ${jobId}`);
       } catch (err) {
-        logger.error({ err: err, opportunityId: oppId }, `[QuoteService] Error processing Opportunity ${oppId} for Job ID: ${jobId}`);
+        logger.error({ err: err, opportunityId: oppId }, `Error preparing UoW for Opportunity ${oppId} for Job ID: ${jobId}`);
       }
     });
 
     if (quoteRefs.size === 0) {
-      logger.warn(`[QuoteService] No quotes were registered for creation for Job ID: ${jobId}.`);
+      logger.warn(`No quotes were registered for creation for Job ID: ${jobId}.`);
       return;
     }
 
-    logger.info(`[QuoteService] Committing Unit of Work with ${quoteRefs.size} Quotes and related Line Items for Job ID: ${jobId}`);
+    logger.info(`Submitting UnitOfWork to create ${quoteRefs.size} Quotes and ${totalLineItems} Line Items`);
     const commitResult = await dataApi.commitUnitOfWork(unitOfWork);
-    logger.info(`[QuoteService] Unit of Work commit attempted for Job ID: ${jobId}`);
 
     // Process results
     let successCount = 0;
     let failureCount = 0;
-    commitResult.forEach((result, ref) => {
-      // Only log results for the main Quote records for brevity
-      if (ref.type === 'Quote') {
-        const oppId = [...quoteRefs.entries()].find(([key, value]) => value === ref)?.[0];
-        if (result.success) {
-          successCount++;
-          logger.info(`[QuoteService] Successfully created Quote ${result.id} for Opportunity ${oppId} in Job ID: ${jobId}`);
-        } else {
-          failureCount++;
-          logger.error({ errors: result.errors, opportunityId: oppId }, `[QuoteService] Failed to create Quote for Opportunity ${oppId} in Job ID: ${jobId}`);
-        }
+
+    // *** Iterate through the original quoteRefs Map we created ***
+    quoteRefs.forEach((originalQuoteRef, oppId) => {
+      // *** Use the original reference object to get the result from the commit map ***
+      const result = commitResult.get(originalQuoteRef);
+      // *** Check for presence of id (success) or errors (failure) ***
+      if (result?.id) { // Check if ID exists -> success
+        successCount++;
+      } else {
+        failureCount++;
+        // Log errors if they exist, otherwise log the whole result
+        logger.error({ errors: result?.errors ?? result, opportunityId: oppId, refId: originalQuoteRef.id }, `Failed to create Quote for Opportunity ${oppId} (Ref ID: ${originalQuoteRef.id}) in Job ID: ${jobId}`);
       }
     });
-    logger.info(`[QuoteService] Quote Creation Results for Job ID ${jobId}: ${successCount} succeeded, ${failureCount} failed.`);
+
+    logger.info(`Job processing completed for Job ID: ${jobId}. Results: ${successCount} succeeded, ${failureCount} failed.`);
 
   } catch (error) {
-    logger.error({ err: error }, `[QuoteService] Critical error processing Quote Job ID ${jobId}`);
+    logger.error({ err: error }, `Error executing batch for Job ID: ${jobId}`);
   }
 }
 

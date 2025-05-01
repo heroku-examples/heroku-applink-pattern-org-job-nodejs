@@ -47,7 +47,7 @@ function generateSampleOLIs (createdOppIds, pricebookEntries) {
       } else {
           // Log a warning if a valid PBE couldn't be found for this iteration
           // Use console.warn directly as logger might not be available here
-          console.warn(`[DataService][DataGen] Could not find valid PricebookEntry with Product2Id for iteration ${i} on Opp ${oppId}. Skipping OLI.`);
+          console.warn(`[DataGen] Could not find valid PricebookEntry with Product2Id for iteration ${i} on Opp ${oppId}. Skipping OLI.`);
       }
     }
   });
@@ -61,28 +61,29 @@ async function pollBulkJobStatus (jobReference, bulkApi, logger) {
   const startTime = Date.now();
 
   const jobId = jobReference.id;
-  logger.info(`[DataService][BulkAPI] Polling status for Job ID: ${jobId} (Type: ${jobReference.type})`);
+  const objectType = jobReference.type === 'ingest' ? 'Ingest' : jobReference.object; // Adjust based on actual reference type
+  logger.info(`Polling Bulk API v2 job status for Job ID: ${jobId} (Object: ${objectType})`);
 
   while (Date.now() - startTime < BULK_API_TIMEOUT) {
     try {
       jobInfo = await bulkApi.getInfo(jobReference);
 
       if (!jobInfo) {
-          logger.error(`[DataService][BulkAPI] bulkApi.getInfo(${jobId}) returned undefined.`);
+          logger.error(`bulkApi.getInfo(${jobId}) returned undefined.`);
           throw new Error(`bulkApi.getInfo(${jobId}) returned undefined.`);
       }
 
-      logger.debug(`[DataService][BulkAPI] Job ${jobId} status: ${jobInfo.state}`);
+      logger.debug(`Bulk API v2 Job ${jobId} status: ${jobInfo.state}`);
 
       if (jobInfo.state === 'JobComplete') {
-        logger.info(`[DataService][BulkAPI] Job ${jobId} processing complete.`);
+        logger.info(`Bulk API v2 Job ${jobId} processing complete.`);
         return jobInfo; // Success
       } else if (jobInfo.state === 'Failed' || jobInfo.state === 'Aborted') {
-        logger.error(`[DataService][BulkAPI] Job ${jobId} failed or was aborted. State: ${jobInfo.state}, Message: ${jobInfo.errorMessage}`);
+        logger.error(`Bulk API v2 Job ${jobId} failed or was aborted. State: ${jobInfo.state}, Message: ${jobInfo.errorMessage}`);
         throw new Error(`Bulk API Job ${jobId} failed or aborted: ${jobInfo.state}`);
       }
     } catch (err) {
-      logger.error({ err: err }, `[DataService][BulkAPI] Error polling job ${jobId}`);
+      logger.error({ err: err }, `Error polling Bulk API v2 job ${jobId}`);
       throw err; // Rethrow error after logging
     }
 
@@ -90,7 +91,7 @@ async function pollBulkJobStatus (jobReference, bulkApi, logger) {
   }
 
   // Timeout reached
-  logger.error(`[DataService][BulkAPI] Timeout polling job ${jobId}. Last state: ${jobInfo?.state}`);
+  logger.error(`Timeout polling Bulk API v2 job ${jobId}. Last state: ${jobInfo?.state}`);
   throw new Error(`Timeout polling Bulk API Job ${jobId}`);
 }
 
@@ -103,33 +104,28 @@ async function pollBulkJobStatus (jobReference, bulkApi, logger) {
  * @param {object} logger - A logger instance.
  */
 async function handleDataMessage (jobData, sfContext, logger) {
-  logger.info(`[DataService] Handling data job object`);
-
   const { jobId: processJobId, operation, count = 10 } = jobData;
   // Note: context is no longer destructured here, sfContext is passed in
+  logger.info(`Worker received job with ID: ${processJobId} for data operation: ${operation}`);
 
   try {
     // *** Access APIs via sfContext.org ***
     if (!sfContext || !sfContext.org || !sfContext.org.dataApi || !sfContext.org.bulkApi) {
-        logger.error(`[DataService] Invalid sfContext or missing APIs for Data Job ID: ${processJobId}`);
+        logger.error(`Invalid sfContext or missing APIs for Data Job ID: ${processJobId}`);
         return;
     }
     const dataApi = sfContext.org.dataApi;
     const bulkApi = sfContext.org.bulkApi;
 
-    logger.info(`[DataService] Processing Data Job ID: ${processJobId}, Operation: ${operation}, Count: ${count}`);
-
     if (operation === 'create') {
-      logger.info(`[DataService] Starting data creation via Bulk API for Job ID: ${processJobId}, Count: ${count}`);
+      logger.info(`Starting data creation via Bulk API v2 for Job ID: ${processJobId}, Count: ${count}`);
 
       // 1. Prerequisites (use dataApi)
-      logger.info(`[DataService] Fetching prerequisites for Job ID: ${processJobId}`);
       let accounts;
       try {
-        logger.info('[DataService] Attempting: dataApi.query("SELECT Id FROM Account LIMIT 1")');
         accounts = await dataApi.query("SELECT Id FROM Account LIMIT 1");
       } catch (queryError) {
-        logger.error({ err: queryError }, '[DataService] Error during dataApi.query for Account');
+        logger.error({ err: queryError }, 'Error during dataApi.query for Account');
         throw queryError;
       }
 
@@ -138,12 +134,10 @@ async function handleDataMessage (jobData, sfContext, logger) {
                        : !accounts.records ? 'Query result missing \'records\' property'
                        : accounts.records.length === 0 ? 'Query returned 0 records'
                        : 'First record missing fields.Id/fields.id property';
-          logger.error(`[DataService] No Account found. Reason: ${reason}.`);
+          logger.error(`No Account found. Reason: ${reason}.`);
           throw new Error(`No Account found. Reason: ${reason}`);
       }
       const accountId = accounts.records[0].fields.Id || accounts.records[0].fields.id;
-      logger.info(`[DataService] Using Account ID: ${accountId} for Job ID: ${processJobId}`);
-
       const standardPricebookResult = await dataApi.query("SELECT Id FROM Pricebook2 WHERE IsStandard = true LIMIT 1");
       if (!(standardPricebookResult?.records?.[0]?.fields?.Id || standardPricebookResult?.records?.[0]?.fields?.id)) { throw new Error('Standard Pricebook not found or missing Id.'); }
       const standardPricebookId = standardPricebookResult.records[0].fields.Id || standardPricebookResult.records[0].fields.id;
@@ -152,10 +146,9 @@ async function handleDataMessage (jobData, sfContext, logger) {
       if (!pbes?.records || pbes.records.length === 0) { throw new Error('No active Pricebook Entries found.'); }
       const pricebookEntries = pbes.records.map(pbe => pbe?.fields).filter(pbe => pbe && pbe.Id && pbe.Product2Id);
       if (pricebookEntries.length === 0) { throw new Error('No valid Pricebook Entries with Product2Id found.'); }
-      logger.info(`[DataService] Found ${pricebookEntries.length} valid PBEs from Standard Pricebook for Job ID: ${processJobId}`);
 
       // --- Create Opportunities via Bulk API (use bulkApi) ---
-      logger.info(`[DataService][BulkAPI] Preparing Opportunity creation job for Job ID: ${processJobId}`);
+      logger.info(`Preparing Bulk API v2 Opportunity creation job for Job ID: ${processJobId}`);
       const oppsToCreate = generateSampleOpportunities(count, accountId, standardPricebookId);
 
       const oppColumns = Object.keys(oppsToCreate[0] || {});
@@ -170,55 +163,54 @@ async function handleDataMessage (jobData, sfContext, logger) {
 
       let oppJobReference;
       if (Array.isArray(oppIngestResult) && oppIngestResult[0]?.error) {
-          logger.error({ errorDetails: oppIngestResult[0].error }, `[DataService][BulkAPI] bulkApi.ingest for Opportunities failed.`);
+          logger.error({ errorDetails: oppIngestResult[0].error }, `Bulk API v2 ingest for Opportunities failed.`);
           throw new Error(`bulkApi.ingest for Opportunities failed.`);
       } else if (Array.isArray(oppIngestResult) && oppIngestResult[0]?.id && oppIngestResult[0]?.type) {
           oppJobReference = oppIngestResult[0];
       } else {
-          logger.error({ oppIngestResult }, `[DataService][BulkAPI] bulkApi.ingest for Opportunities returned unexpected structure.`);
+          logger.error({ oppIngestResult }, `Bulk API v2 ingest for Opportunities returned unexpected structure.`);
           throw new Error('bulkApi.ingest for Opportunities returned unexpected structure.');
       }
 
-      logger.info(`[DataService][BulkAPI] Submitted Opportunity creation job with ID: ${oppJobReference.id} for main Job ID: ${processJobId}`);
+      logger.info(`Submitted Bulk API v2 Opportunity creation job with ID: ${oppJobReference.id} for main Job ID: ${processJobId}`);
       const oppJobInfo = await pollBulkJobStatus(oppJobReference, bulkApi, logger);
-      logger.info(`[DataService][BulkAPI] Opp job ${oppJobReference.id} completed. State: ${oppJobInfo.state}, Processed: ${oppJobInfo.numberRecordsProcessed}, Failed: ${oppJobInfo.numberRecordsFailed}`);
+      logger.info(`Opportunity creation job ${oppJobReference.id} completed. State: ${oppJobInfo.state}, Processed: ${oppJobInfo.numberRecordsProcessed}, Failed: ${oppJobInfo.numberRecordsFailed}`);
 
       if (oppJobInfo.numberRecordsFailed > 0) {
           try {
               const failedRecords = await bulkApi.getFailedResults(oppJobReference);
-              logger.warn(`[DataService][BulkAPI] Opportunity creation job ${oppJobReference.id} had ${oppJobInfo.numberRecordsFailed} failures. Details:`, failedRecords);
+              logger.warn(`Opportunity creation job ${oppJobReference.id} had ${oppJobInfo.numberRecordsFailed} failures. Details:`, failedRecords);
           } catch(failErr) {
-              logger.error({err: failErr}, `[DataService][BulkAPI] Error fetching failed results for job ${oppJobReference.id}`);
+              logger.error({err: failErr}, `Error fetching failed results for job ${oppJobReference.id}`);
           }
       }
 
       if (oppJobInfo.numberRecordsProcessed === 0 || oppJobInfo.numberRecordsProcessed === oppJobInfo.numberRecordsFailed) {
-          logger.error(`[DataService][BulkAPI] No Opportunities successfully created by job ${oppJobReference.id}. Aborting OLI creation for Job ID: ${processJobId}.`);
+          logger.error(`No Opportunities successfully created by job ${oppJobReference.id}. Aborting OLI creation for Job ID: ${processJobId}.`);
           return;
       }
 
       // --- Create OLIs via Bulk API (use bulkApi) ---
-      logger.info(`[DataService][BulkAPI] Fetching successful results for Opportunity job ${oppJobReference.id}`);
       let successfulOppIds = [];
        try {
             const successfulRecords = await bulkApi.getSuccessfulResults(oppJobReference);
             successfulOppIds = successfulRecords.map(rec => rec.get('sf__Id')).filter(id => id);
-            logger.info(`[DataService][BulkAPI] Extracted ${successfulOppIds.length} successful Opportunity IDs for Job ID: ${processJobId}`);
+            logger.info(`Extracted ${successfulOppIds.length} successful Opportunity IDs for Job ID: ${processJobId}`);
        } catch(successErr) {
-           logger.error({err: successErr}, `[DataService][BulkAPI] Error fetching successful results for Opportunity job ${oppJobReference.id}. Cannot create OLIs.`);
+           logger.error({err: successErr}, `Error fetching successful results for Opportunity job ${oppJobReference.id}. Cannot create OLIs.`);
            return;
        }
 
        if (successfulOppIds.length === 0) {
-            logger.warn(`[DataService][BulkAPI] No successful Opportunity IDs retrieved from job ${oppJobReference.id}. Cannot create OLIs for Job ID: ${processJobId}.`);
+            logger.warn(`No successful Opportunity IDs retrieved from job ${oppJobReference.id}. Cannot create OLIs for Job ID: ${processJobId}.`);
             return;
        }
 
-      logger.info(`[DataService][BulkAPI] Preparing OLI creation job for ${successfulOppIds.length} Opportunities for Job ID: ${processJobId}`);
+      logger.info(`Preparing Bulk API v2 OLI creation job for ${successfulOppIds.length} Opportunities for Job ID: ${processJobId}`);
       const olisToCreate = generateSampleOLIs(successfulOppIds, pricebookEntries);
 
       if (olisToCreate.length === 0) {
-          logger.info(`[DataService][BulkAPI] No OLIs generated. Skipping OLI creation job for Job ID: ${processJobId}`);
+          logger.info(`No OLIs generated. Skipping OLI creation job for Job ID: ${processJobId}`);
       } else {
           const oliColumns = Object.keys(olisToCreate[0] || {});
           const oliDataTable = olisToCreate.map(oli => {
@@ -232,51 +224,51 @@ async function handleDataMessage (jobData, sfContext, logger) {
 
           let oliJobReference;
           if (Array.isArray(oliIngestResult) && oliIngestResult[0]?.error) {
-              logger.error({ errorDetails: oliIngestResult[0].error }, `[DataService][BulkAPI] bulkApi.ingest for OLIs failed.`);
-              logger.warn(`[DataService][BulkAPI] OLI creation job submission failed.`);
+              logger.error({ errorDetails: oliIngestResult[0].error }, `Bulk API v2 ingest for OLIs failed.`);
+              logger.warn(`OLI creation job submission failed.`);
           } else if (Array.isArray(oliIngestResult) && oliIngestResult[0]?.id && oliIngestResult[0]?.type) {
               oliJobReference = oliIngestResult[0];
           } else {
-              logger.error({ oliIngestResult }, `[DataService][BulkAPI] bulkApi.ingest for OLIs returned unexpected structure.`);
-              logger.warn(`[DataService][BulkAPI] OLI creation job submission returned unexpected structure.`);
+              logger.error({ oliIngestResult }, `Bulk API v2 ingest for OLIs returned unexpected structure.`);
+              logger.warn(`OLI creation job submission returned unexpected structure.`);
           }
 
           if (oliJobReference) {
-              logger.info(`[DataService][BulkAPI] Submitted OLI creation job with ID: ${oliJobReference.id} for main Job ID: ${processJobId}`);
+              logger.info(`Submitted Bulk API v2 OLI creation job with ID: ${oliJobReference.id} for main Job ID: ${processJobId}`);
               const oliJobInfo = await pollBulkJobStatus(oliJobReference, bulkApi, logger);
-              logger.info(`[DataService][BulkAPI] OLI job ${oliJobReference.id} completed. State: ${oliJobInfo.state}, Processed: ${oliJobInfo.numberRecordsProcessed}, Failed: ${oliJobInfo.numberRecordsFailed}`);
+              logger.info(`OLI creation job ${oliJobReference.id} completed. State: ${oliJobInfo.state}, Processed: ${oliJobInfo.numberRecordsProcessed}, Failed: ${oliJobInfo.numberRecordsFailed}`);
               if (oliJobInfo.numberRecordsFailed > 0) {
                   try {
                      const failedRecords = await bulkApi.getFailedResults(oliJobReference);
-                     logger.warn(`[DataService][BulkAPI] OLI creation job ${oliJobReference.id} had ${oliJobInfo.numberRecordsFailed} failures. Details:`, failedRecords);
+                     logger.warn(`OLI creation job ${oliJobReference.id} had ${oliJobInfo.numberRecordsFailed} failures. Details:`, failedRecords);
                   } catch(failErr) {
-                     logger.error({err: failErr}, `[DataService][BulkAPI] Error fetching failed results for OLI job ${oliJobReference.id}`);
+                     logger.error({err: failErr}, `Error fetching failed results for OLI job ${oliJobReference.id}`);
                   }
               }
           } else {
-             logger.warn(`[DataService][BulkAPI] Skipping OLI job polling because submission failed or returned invalid reference.`);
+             logger.warn(`Skipping OLI job polling because submission failed or returned invalid reference.`);
           }
       }
 
-      logger.info(`[DataService][BulkAPI] Completed data creation process for Job ID: ${processJobId}`);
+      logger.info(`Job processing completed for Job ID: ${processJobId}`);
 
     } else if (operation === 'delete') {
-      logger.info(`[DataService] Starting data deletion via Bulk API for Job ID: ${processJobId}`);
+      logger.info(`Starting data deletion via Bulk API v2 for Job ID: ${processJobId}`);
 
       // --- Delete Operation via Bulk API ---
       const MAX_DELETE_QUERY = 5000;
       const oppsToDeleteQuery = `SELECT Id FROM Opportunity WHERE Name LIKE 'Sample Opp %' LIMIT ${MAX_DELETE_QUERY}`;
-      logger.info(`[DataService][BulkAPI] Querying up to ${MAX_DELETE_QUERY} Opportunities for deletion: ${oppsToDeleteQuery} for Job ID: ${processJobId}`);
+      // logger.info(`Querying up to ${MAX_DELETE_QUERY} Opportunities for deletion: ${oppsToDeleteQuery} for Job ID: ${processJobId}`); // Less verbose
       const oppsToDeleteResult = await dataApi.query(oppsToDeleteQuery);
 
       if (!oppsToDeleteResult?.records || oppsToDeleteResult.records.length === 0) {
-        logger.info(`[DataService][BulkAPI] No sample Opportunities found to delete for Job ID: ${processJobId}`);
+        logger.info(`No sample Opportunities found to delete for Job ID: ${processJobId}`);
         return;
       }
       const oppIdsToDelete = oppsToDeleteResult.records.map(opp => ({ Id: opp?.fields?.Id || opp?.fields?.id })).filter(item => item.Id);
-      logger.info(`[DataService][BulkAPI] Found ${oppIdsToDelete.length} Opportunities to delete for Job ID: ${processJobId}`);
+      logger.info(`Found ${oppIdsToDelete.length} Opportunities to delete for Job ID: ${processJobId}`);
 
-      logger.info(`[DataService][BulkAPI] Preparing Opportunity deletion job for Job ID: ${processJobId}`);
+      logger.info(`Preparing Bulk API v2 Opportunity deletion job for Job ID: ${processJobId}`);
 
        const deleteColumns = ['Id'];
        const deleteDataTable = oppIdsToDelete.map(opp => {
@@ -290,35 +282,35 @@ async function handleDataMessage (jobData, sfContext, logger) {
 
       let deleteJobReference;
       if (Array.isArray(deleteIngestResult) && deleteIngestResult[0]?.error) {
-          logger.error({ errorDetails: deleteIngestResult[0].error }, `[DataService][BulkAPI] bulkApi.ingest for Deletion failed.`);
+          logger.error({ errorDetails: deleteIngestResult[0].error }, `Bulk API v2 ingest for Deletion failed.`);
           throw new Error(`bulkApi.ingest for Deletion failed.`);
       } else if (Array.isArray(deleteIngestResult) && deleteIngestResult[0]?.id && deleteIngestResult[0]?.type) {
           deleteJobReference = deleteIngestResult[0];
       } else {
-          logger.error({ deleteIngestResult }, `[DataService][BulkAPI] bulkApi.ingest for Deletion returned unexpected structure.`);
+          logger.error({ deleteIngestResult }, `Bulk API v2 ingest for Deletion returned unexpected structure.`);
           throw new Error('bulkApi.ingest for Deletion returned unexpected structure.');
       }
 
-      logger.info(`[DataService][BulkAPI] Submitted Deletion job with ID: ${deleteJobReference.id} for main Job ID: ${processJobId}`);
+      logger.info(`Submitted Bulk API v2 Deletion job with ID: ${deleteJobReference.id} for main Job ID: ${processJobId}`);
       const deleteJobInfo = await pollBulkJobStatus(deleteJobReference, bulkApi, logger);
-      logger.info(`[DataService][BulkAPI] Deletion job ${deleteJobReference.id} completed. State: ${deleteJobInfo.state}, Processed: ${deleteJobInfo.numberRecordsProcessed}, Failed: ${deleteJobInfo.numberRecordsFailed}`);
+      logger.info(`Deletion job ${deleteJobReference.id} completed. State: ${deleteJobInfo.state}, Processed: ${deleteJobInfo.numberRecordsProcessed}, Failed: ${deleteJobInfo.numberRecordsFailed}`);
        if (deleteJobInfo.numberRecordsFailed > 0) {
            try {
               const failedRecords = await bulkApi.getFailedResults(deleteJobReference);
-              logger.warn(`[DataService][BulkAPI] Deletion job ${deleteJobReference.id} had ${deleteJobInfo.numberRecordsFailed} failures. Details:`, failedRecords);
+              logger.warn(`Deletion job ${deleteJobReference.id} had ${deleteJobInfo.numberRecordsFailed} failures. Details:`, failedRecords);
            } catch(failErr) {
-              logger.error({err: failErr}, `[DataService][BulkAPI] Error fetching failed results for deletion job ${deleteJobReference.id}`);
+              logger.error({err: failErr}, `Error fetching failed results for deletion job ${deleteJobReference.id}`);
            }
        }
 
-      logger.info(`[DataService][BulkAPI] Completed data deletion process for Job ID: ${processJobId}`);
+      logger.info(`Job processing completed for Job ID: ${processJobId}`);
 
     } else {
-      logger.warn(`[DataService] Unknown data operation requested: ${operation} for Job ID: ${processJobId}`);
+      logger.warn(`Unknown data operation requested: ${operation} for Job ID: ${processJobId}`);
     }
 
   } catch (error) {
-    logger.error({ err: error }, `[DataService] Critical error processing Data Job ID ${processJobId}`);
+    logger.error({ err: error }, `Critical error processing Data Job ID ${processJobId}`);
   }
 }
 
