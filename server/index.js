@@ -27,7 +27,35 @@ fastify.register(swagger, {
     tags: [
       { name: 'Pricing Engine', description: 'Quote generation endpoints' },
       { name: 'Sample Data', description: 'Sample data management endpoints' }
-    ]
+    ],
+    components: {
+      schemas: {
+        JobResponse: {
+          type: 'object',
+          description: 'Response includes the unique job ID processing the request.',
+          properties: {
+            jobId: {
+              type: 'string',
+              format: 'uuid',
+              description: 'Unique job ID for tracking the worker process',
+              example: '3f7c47f3-7c66-4c9a-92e5-ef2dbb9a1d67'
+            }
+          }
+        },
+        BatchExecutionRequest: {
+          type: 'object',
+          required: ['soqlWhereClause'],
+          description: 'Request to execute a batch process, includes a SOQL WHERE clause to extract product information',
+          properties: {
+            soqlWhereClause: {
+              type: 'string',
+              description: 'A SOQL WHERE clause for filtering opportunities',
+              example: "OpportunityId IN ('0065g00000B9tMP', '0065g00000B9tMQ')"
+            }
+          }
+        }
+      }
+    }
   }
 });
 
