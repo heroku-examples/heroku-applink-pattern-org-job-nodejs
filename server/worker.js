@@ -194,21 +194,34 @@ function generateSampleOpportunities (count, accountId, pricebookId) {
 }
 
 // Placeholder for generating OLI data
-function generateSampleOLIs (createdOppIds, pricebookEntryIds) {
+// *** Update to generate a fixed number (2) and include Product2Id ***
+function generateSampleOLIs (createdOppIds, pricebookEntries) {
   const olis = [];
-  if (!createdOppIds || createdOppIds.length === 0 || !pricebookEntryIds || pricebookEntryIds.length === 0) {
+  const FIXED_OLI_COUNT = 2;
+  if (!createdOppIds || createdOppIds.length === 0 || !pricebookEntries || pricebookEntries.length === 0) {
     return olis;
   }
+
   createdOppIds.forEach(oppId => {
-    // Add 1-3 random line items for each opp
-    const lineItemCount = Math.floor(Math.random() * 3) + 1;
-    for (let i = 0; i < lineItemCount; i++) {
-      olis.push({
-        OpportunityId: oppId,
-        PricebookEntryId: pricebookEntryIds[Math.floor(Math.random() * pricebookEntryIds.length)], // Pick a random PBE
-        Quantity: Math.floor(Math.random() * 10) + 1,
-        UnitPrice: Math.floor(Math.random() * 100) + 10 // Random price between 10-110
-      });
+    // Add FIXED_OLI_COUNT line items for each opp
+    for (let i = 0; i < FIXED_OLI_COUNT; i++) {
+      // Pick a random PBE ensuring we don't exceed available entries
+      const entryIndex = Math.floor(Math.random() * pricebookEntries.length);
+      const pbe = pricebookEntries[entryIndex];
+
+      // Ensure we got a valid PBE object with Id and Product2Id
+      if (pbe && pbe.Id && pbe.Product2Id) {
+          olis.push({
+            OpportunityId: oppId,
+            PricebookEntryId: pbe.Id,
+            Product2Id: pbe.Product2Id, // Include Product2Id
+            Quantity: Math.floor(Math.random() * 10) + 1,
+            UnitPrice: Math.floor(Math.random() * 100) + 10 // Random price between 10-110
+          });
+      } else {
+          // Log a warning if a valid PBE couldn't be found for this iteration
+          console.warn(`[Worker][DataGen] Could not find valid PricebookEntry with Product2Id for iteration ${i} on Opp ${oppId}. Skipping OLI.`);
+      }
     }
   });
   return olis;
@@ -232,7 +245,6 @@ async function pollBulkJobStatus (jobReference, bulkApi, logger) {
       logger.info(`[Worker][BulkAPI] Polling job with ID: ${jobId}`);
       // *** Pass the full jobReference object to getInfo ***
       jobInfo = await bulkApi.getInfo(jobReference);
-      logger.info({ rawJobInfo: jobInfo }, `[Worker][BulkAPI] Raw result from bulkApi.getInfo for job ${jobId}`);
 
       if (!jobInfo) {
           logger.error(`[Worker][BulkAPI] bulkApi.getInfo(${jobId}) returned undefined.`);
@@ -338,11 +350,13 @@ async function handleDataMessage (jobData) {
       if (!(standardPricebook?.records?.[0]?.fields?.Id || standardPricebook?.records?.[0]?.fields?.id)) { throw new Error('Standard Pricebook not found or missing Id.'); }
       const standardPricebookId = standardPricebook.records[0].fields.Id || standardPricebook.records[0].fields.id;
 
-      const pbes = await dataApi.query(`SELECT Id FROM PricebookEntry WHERE Pricebook2Id = '${standardPricebookId}' AND IsActive = true LIMIT 10`);
+      // *** Update PBE query to fetch Product2Id ***
+      const pbes = await dataApi.query(`SELECT Id, Product2Id FROM PricebookEntry WHERE Pricebook2Id = '${standardPricebookId}' AND IsActive = true LIMIT 10`);
       if (!pbes?.records || pbes.records.length === 0) { throw new Error('No active Pricebook Entries found.'); }
-      const pricebookEntryIds = pbes.records.map(pbe => pbe?.fields?.Id || pbe?.fields?.id).filter(id => id);
-      if (pricebookEntryIds.length === 0) { throw new Error('No valid Pricebook Entry Ids found.'); }
-      logger.info(`[Worker] Found ${pricebookEntryIds.length} PBEs from Standard Pricebook for Job ID: ${processJobId}`);
+      // *** Store the full PBE objects (including Product2Id) ***
+      const pricebookEntries = pbes.records.map(pbe => pbe?.fields).filter(pbe => pbe && pbe.Id && pbe.Product2Id);
+      if (pricebookEntries.length === 0) { throw new Error('No valid Pricebook Entries with Product2Id found.'); }
+      logger.info(`[Worker] Found ${pricebookEntries.length} valid PBEs from Standard Pricebook for Job ID: ${processJobId}`);
 
       // --- Create Opportunities via Bulk API (use bulkApi) ---
       logger.info(`[Worker][BulkAPI] Preparing Opportunity creation job for Job ID: ${processJobId}`);
@@ -359,7 +373,6 @@ async function handleDataMessage (jobData) {
 
       // Call ingest, add operation, and capture the full result array
       const oppIngestResult = await bulkApi.ingest({ object: 'Opportunity', operation: 'insert', dataTable: oppDataTable });
-      logger.info({ oppIngestResult }, `[Worker][BulkAPI] Raw result from Opportunity ingest call.`);
 
       // Check for errors and extract the actual Job Reference *object*
       let oppJobReference;
@@ -378,7 +391,7 @@ async function handleDataMessage (jobData) {
 
       // Pass the full job reference object and bulkApi to pollBulkJobStatus
       const oppJobInfo = await pollBulkJobStatus(oppJobReference, bulkApi, logger);
-      logger.info(`[Worker][BulkAPI] Opportunity creation job ${oppJobReference.id} completed. State: ${oppJobInfo.state}, Records Processed: ${oppJobInfo.numberRecordsProcessed}, Failed: ${oppJobInfo.numberRecordsFailed}`);
+      logger.info(`[Worker][BulkAPI] Opp job ${oppJobReference.id} completed. State: ${oppJobInfo.state}, Processed: ${oppJobInfo.numberRecordsProcessed}, Failed: ${oppJobInfo.numberRecordsFailed}`);
 
       if (oppJobInfo.numberRecordsFailed > 0) {
           try {
@@ -402,9 +415,6 @@ async function handleDataMessage (jobData) {
        try {
             // Pass the job reference object
             const successfulRecords = await bulkApi.getSuccessfulResults(oppJobReference);
-            // *** Log the raw successfulRecords structure ***
-            logger.info({ successfulRecords }, `[Worker][BulkAPI] Raw result from getSuccessfulResults for Opp job ${oppJobReference.id}`);
-            // *** End log ***
             // *** Use Map.get() to access the ID ***
             successfulOppIds = successfulRecords.map(rec => rec.get('sf__Id')).filter(id => id);
             logger.info(`[Worker][BulkAPI] Extracted ${successfulOppIds.length} successful Opportunity IDs for Job ID: ${processJobId}`);
@@ -419,7 +429,8 @@ async function handleDataMessage (jobData) {
        }
 
       logger.info(`[Worker][BulkAPI] Preparing OLI creation job for ${successfulOppIds.length} Opportunities for Job ID: ${processJobId}`);
-      const olisToCreate = generateSampleOLIs(successfulOppIds, pricebookEntryIds);
+      // *** Pass the full pricebookEntries array ***
+      const olisToCreate = generateSampleOLIs(successfulOppIds, pricebookEntries);
 
       if (olisToCreate.length === 0) {
           logger.info(`[Worker][BulkAPI] No OLIs generated. Skipping OLI creation job for Job ID: ${processJobId}`);
@@ -435,7 +446,6 @@ async function handleDataMessage (jobData) {
 
           // Call ingest, add operation, and capture the full result array
           const oliIngestResult = await bulkApi.ingest({ object: 'OpportunityLineItem', operation: 'insert', dataTable: oliDataTable });
-          logger.info({ oliIngestResult }, `[Worker][BulkAPI] Raw result from OLI ingest call.`);
 
           // Check for errors and extract the actual Job Reference *object*
           let oliJobReference;
@@ -458,7 +468,7 @@ async function handleDataMessage (jobData) {
 
               // Pass the full job reference object and bulkApi to pollBulkJobStatus
               const oliJobInfo = await pollBulkJobStatus(oliJobReference, bulkApi, logger);
-              logger.info(`[Worker][BulkAPI] OLI creation job ${oliJobReference.id} completed. State: ${oliJobInfo.state}, Records Processed: ${oliJobInfo.numberRecordsProcessed}, Failed: ${oliJobInfo.numberRecordsFailed}`);
+              logger.info(`[Worker][BulkAPI] OLI job ${oliJobReference.id} completed. State: ${oliJobInfo.state}, Processed: ${oliJobInfo.numberRecordsProcessed}, Failed: ${oliJobInfo.numberRecordsFailed}`);
               if (oliJobInfo.numberRecordsFailed > 0) {
                   try {
                      // Pass the job reference object
@@ -505,7 +515,6 @@ async function handleDataMessage (jobData) {
 
       // Call ingest, ensure operation is correct, and capture the full result array
       const deleteIngestResult = await bulkApi.ingest({ object: 'Opportunity', operation: 'hardDelete', dataTable: deleteDataTable });
-      logger.info({ deleteIngestResult }, `[Worker][BulkAPI] Raw result from Deletion ingest call.`);
 
       // Check for errors and extract the actual Job Reference *object*
       let deleteJobReference;
@@ -524,7 +533,7 @@ async function handleDataMessage (jobData) {
 
       // Pass the full job reference object and bulkApi to pollBulkJobStatus
       const deleteJobInfo = await pollBulkJobStatus(deleteJobReference, bulkApi, logger);
-      logger.info(`[Worker][BulkAPI] Deletion job ${deleteJobReference.id} completed. State: ${deleteJobInfo.state}, Records Processed: ${deleteJobInfo.numberRecordsProcessed}, Failed: ${deleteJobInfo.numberRecordsFailed}`);
+      logger.info(`[Worker][BulkAPI] Deletion job ${deleteJobReference.id} completed. State: ${deleteJobInfo.state}, Processed: ${deleteJobInfo.numberRecordsProcessed}, Failed: ${deleteJobInfo.numberRecordsFailed}`);
        if (deleteJobInfo.numberRecordsFailed > 0) {
            try {
               // Pass the job reference object

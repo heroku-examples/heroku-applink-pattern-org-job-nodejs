@@ -13,11 +13,17 @@ Follow the README instructions to set up a local testing environment connected t
 
 ## In Progress Tasks (Local Testing & Debugging)
 - [x] Run application locally using `heroku local` (Fixed Redis TLS & EADDRINUSE errors)
-- [ ] Use `./bin/invoke.sh` to generate sample data (`POST /api/data/create`)
-    - [ ] Verify job ID is returned.
-    - [ ] Monitor `heroku local` logs for `web` and `worker` activity (Data creation).
-    - [ ] Check Salesforce org for newly created Opportunity/OLI records.
-    - [ ] Debug any errors in `handleDataMessage` (`server/worker.js`).
+- [x] Use `./bin/invoke.sh` to generate sample data (`POST /api/data/create`)
+    - [x] Verify job ID is returned.
+    - [x] Monitor `heroku local` logs for `web` and `worker` activity (Data creation).
+    - [x] Check Salesforce org for newly created Opportunity/OLI records.
+    - [x] Debug any errors in `handleDataMessage` (`server/worker.js`).
+    - [ ] **Cleanup & Alignment:**
+        - [x] Modify `generateSampleOLIs` for a fixed count of 2 OLIs.
+        - [x] Fetch `Product2Id` from `PricebookEntry` in `handleDataMessage`.
+        - [x] Include `Product2Id` in OLI generation and Bulk API submission.
+        - [x] Remove detailed debug logs added previously.
+        - [x] Refine remaining logs for conciseness and alignment with Java style.
 - [ ] Use `./bin/invoke.sh` to generate quotes (`POST /api/executebatch`)
     - [ ] Verify job ID is returned.
     - [ ] Monitor `heroku local` logs for `web` and `worker` activity (Quote generation).
