@@ -14,18 +14,17 @@ const executeBatchSchema = {
   description: "Calculate pricing and generate quotes from Opportunities queried using the SOQL WHERE clause.",
   operationId: 'executeBatch',
   body: {
-    type: 'object',
-    required: ['soqlWhereClause'],
-    properties: {
-      soqlWhereClause: { type: 'string', description: 'SOQL WHERE clause to select Opportunities' }
-    }
+    $ref: 'BatchExecutionRequest#' // Reference schema by $id
   },
   response: {
     202: { // Use 202 Accepted as the job is queued
       description: 'Job accepted for processing',
-      type: 'object',
-      properties: {
-        jobId: { type: 'string', format: 'uuid' }
+      content: { // Add content wrapper for $ref
+        'application/json': {
+          schema: {
+            $ref: 'JobResponse#' // Reference schema by $id
+          }
+        }
       }
     }
   }
@@ -37,9 +36,12 @@ const dataOperationSchema = {
   response: {
     202: { // Use 202 Accepted
       description: 'Data operation job accepted',
-      type: 'object',
-      properties: {
-        jobId: { type: 'string', format: 'uuid' }
+      content: { // Add content wrapper for $ref
+        'application/json': {
+          schema: {
+            $ref: 'JobResponse#' // Reference schema by $id
+          }
+        }
       }
     }
   }
@@ -51,12 +53,14 @@ const dataCreateSchema = {
   description: "Starts a job to create a large amount of Opportunity records.",
   operationId: 'datacreate',
   body: {
+    // Keep inline definition for count as it's specific to this endpoint
     type: 'object',
     required: [],
     properties: {
       count: { type: 'integer', minimum: 1, default: 10, description: 'Number of sample Opportunity records to create (defaults to 10)' }
     }
   }
+  // Inherits response from dataOperationSchema which now uses $ref
 };
 
 const dataDeleteSchema = {
@@ -65,6 +69,7 @@ const dataDeleteSchema = {
   description: "Starts a job to delete generate Quotes",
   operationId: 'datadelete'
   // No body required for delete operation in this example
+  // Inherits response from dataOperationSchema which now uses $ref
 };
 
 /**

@@ -5,6 +5,34 @@ import config from './config/index.js';
 import salesforcePlugin from './middleware/salesforce.js';
 import apiRoutes from './routes/api.js';
 
+// === Shared Schemas ===
+// Define reusable schemas as constants
+const JobResponseSchema = {
+  $id: 'JobResponse', // Add $id for referencing
+  type: 'object',
+  description: 'Response includes the unique job ID processing the request.',
+  properties: {
+    jobId: {
+      type: 'string',
+      format: 'uuid',
+      description: 'Unique job ID for tracking the worker process'
+    }
+  }
+};
+
+const BatchExecutionRequestSchema = {
+  $id: 'BatchExecutionRequest', // Add $id for referencing
+  type: 'object',
+  required: ['soqlWhereClause'],
+  description: 'Request to execute a batch process, includes a SOQL WHERE clause to extract product information',
+  properties: {
+    soqlWhereClause: {
+      type: 'string',
+      description: 'A SOQL WHERE clause for filtering opportunities'
+    }
+  }
+};
+
 // Basic logging configuration
 const fastify = Fastify({
   logger: {
@@ -12,10 +40,14 @@ const fastify = Fastify({
   }
 });
 
+// Add shared schemas *before* registering Swagger or routes
+fastify.addSchema(JobResponseSchema);
+fastify.addSchema(BatchExecutionRequestSchema);
+
 // Register Swagger for dynamic generation
 fastify.register(swagger, {
   openapi: {
-    openapi: '3.0.0',
+    openapi: '3.0.1',
     info: {
       title: 'Org Job Pricing Engine API',
       description: 'API for calculating pricing and managing sample data, interacting with Salesforce via AppLink.',
@@ -30,31 +62,16 @@ fastify.register(swagger, {
     ],
     components: {
       schemas: {
-        JobResponse: {
-          type: 'object',
-          description: 'Response includes the unique job ID processing the request.',
-          properties: {
-            jobId: {
-              type: 'string',
-              format: 'uuid',
-              description: 'Unique job ID for tracking the worker process',
-              example: '3f7c47f3-7c66-4c9a-92e5-ef2dbb9a1d67'
-            }
-          }
-        },
-        BatchExecutionRequest: {
-          type: 'object',
-          required: ['soqlWhereClause'],
-          description: 'Request to execute a batch process, includes a SOQL WHERE clause to extract product information',
-          properties: {
-            soqlWhereClause: {
-              type: 'string',
-              description: 'A SOQL WHERE clause for filtering opportunities',
-              example: "OpportunityId IN ('0065g00000B9tMP', '0065g00000B9tMQ')"
-            }
-          }
-        }
+        // Reference the added schemas using their $id
+        JobResponse: { $ref: 'JobResponse#' },
+        BatchExecutionRequest: { $ref: 'BatchExecutionRequest#' }
       }
+    }
+  },
+  // Add refResolver to use $id for references
+  refResolver: {
+    buildLocalReference (json, baseUri, fragment, i) {
+      return json.$id || `def-${i}`; // Use $id, fallback to default def-N
     }
   }
 });

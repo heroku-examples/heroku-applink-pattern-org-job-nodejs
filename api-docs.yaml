@@ -1,14 +1,17 @@
 openapi: 3.0.1
 info:
   title: OpenAPI definition
+  description: API for calculating pricing and managing sample data, interacting with Salesforce via AppLink.
   version: v0
 servers:
-- url: http://localhost:8080
-  description: Generated server url
+- url: http://localhost:5000
+  description: Local development server
 tags:
 - name: Pricing Engine
   description: Leverage dynamic pricing calculation logic and rules to calculate pricing
     information in the form of Quotes.
+- name: Sample Data
+  description: Sample data management endpoints
 paths:
   /api/executebatch:
     post:
@@ -25,40 +28,40 @@ paths:
               $ref: "#/components/schemas/BatchExecutionRequest"
         required: true
       responses:
-        "200":
-          description: OK
+        "202":
+          description: Job accepted for processing
           content:
-            '*/*':
+            'application/json':
               schema:
-                $ref: "#/components/schemas/BatchExecutionResponse"
+                $ref: "#/components/schemas/JobResponse"
   /api/data/delete:
     post:
       tags:
-      - Pricing Engine
-      summary: Deletes all Quotes created by executeBatch
+      - Sample Data
+      summary: Submit Sample Data Deletion Job
       description: Starts a job to delete generate Quotes
       operationId: datadelete
       responses:
-        "200":
-          description: OK
+        "202":
+          description: Data operation job accepted
           content:
-            '*/*':
+            'application/json':
               schema:
-                $ref: "#/components/schemas/DataJobResponse"
+                $ref: "#/components/schemas/JobResponse"
   /api/data/create:
     post:
       tags:
-      - Pricing Engine
-      summary: Create sample Opportunties to test against
+      - Sample Data
+      summary: Submit Sample Data Creation Job
       description: Starts a job to create a large amount of Opportunity records.
       operationId: datacreate
       responses:
-        "200":
-          description: OK
+        "202":
+          description: Data operation job accepted
           content:
-            '*/*':
+            'application/json':
               schema:
-                $ref: "#/components/schemas/DataJobResponse"
+                $ref: "#/components/schemas/JobResponse"
 components:
   schemas:
     BatchExecutionRequest:
@@ -67,22 +70,12 @@ components:
         soqlWhereClause:
           type: string
           description: A SOQL WHERE clause for filtering opportunities
-          example: "OpportunityId IN ('0065g00000B9tMP', '0065g00000B9tMQ')"
-      description: "Request to execute a batch process, includes a SOQL WHERE clause\
-        \ to extract product information"
-    BatchExecutionResponse:
+      description: "Request to execute a batch process, includes a SOQL WHERE clause to extract product information"
+    JobResponse:
       type: object
       properties:
         jobId:
           type: string
+          format: uuid
           description: Unique job ID for tracking the worker process
-          example: 3f7c47f3-7c66-4c9a-92e5-ef2dbb9a1d67
-      description: Response includes the unique job ID processing the request.
-    DataJobResponse:
-      type: object
-      properties:
-        jobId:
-          type: string
-          description: Unique job ID for tracking the worker process
-          example: 3f7c47f3-7c66-4c9a-92e5-ef2dbb9a1d67
       description: Response includes the unique job ID processing the request.

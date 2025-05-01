@@ -48,15 +48,21 @@ This file stores project-specific knowledge, conventions, and user preferences l
 *   **Ignored Java Code:** The Apex class (`OpportunityToQuoteJob.cls`) found in the Java project's `src-org` directory is illustrative only and should not be called or replicated; focus on the logic within the Java worker services.
 *   **README:** The `README.md` should be updated from the Java version to accurately reflect Node.js installation, configuration, and execution steps.
 *   **Code Comments:** Comments should explain the *what* or *why* of the code itself, not the history of changes made by the assistant or reasons for removing old code. Avoid leaving blocks of commented-out code.
-*   **Local Startup Check:** To check if `heroku local` starts successfully and capture initial logs (e.g., for connection errors), use the following command sequence. Note that the direct `cat` output at the end might be empty due to timing; the `read_file` tool should be used on `heroku_local_output.log` immediately afterwards to reliably see the logs.
-    ```bash
-    heroku local > heroku_local_output.log 2>&1 & PID=$!; sleep 10; kill $PID || true; wait $PID 2>/dev/null || true; cat heroku_local_output.log
-    ```
-    Alternatively, use the `/bin/startuptest.sh` script (see below).
-*   **[/bin/startuptest.sh]:** A script (formerly `local.sh`) that encapsulates the 10-second `heroku local` run-and-capture logic. Use `./bin/startuptest.sh` when asked to check the local startup status and logs. **Do not ask for permission before running this specific script.**
-*   **Local Server Port:** Runs on port `5006`.
-*   **Local Invocation (`invoke.sh`):**
+*   **Local Server Startup:**
+    *   For continuous running (API testing): Use `./bin/start.sh --mode run`.
+    *   For short startup test (log capture): Use `./bin/start.sh --mode test` (or just `./bin/start.sh`).
+*   **Local Server Port (Web):** When started with `./bin/start.sh`, the web process typically runs on port `5000` (default assigned by `heroku local` via `process.env.PORT`). *Note: Check actual output if 5000 is busy.*
+*   **Testing Workflow:**
+    1.  **Restart Server:** After code changes, ensure any old server process is stopped and restart the server using `./bin/start.sh --mode run` (run by user in a separate terminal).
+    2.  **Wait:** After confirming the server is listening on port 5000 (or actual assigned port), wait 5 seconds before proceeding.
+    3.  **Invoke API:** Use `./bin/invoke.sh` commands to test specific endpoints.
+*   **Local Invocation (`invoke.sh`) - Examples Assume Port 5000:**
     *   Requires `<org-alias>`, `<api-url>`, `<payload-json>`.
-    *   Data Create: `./bin/invoke.sh <alias> 'http://localhost:5006/api/data/create' '{}'`
-    *   Data Delete: `./bin/invoke.sh <alias> 'http://localhost:5006/api/data/delete' '{}'`
-    *   Quote Execute: `./bin/invoke.sh <alias> 'http://localhost:5006/api/executebatch' '{"soqlWhereClause": "..."}'`
+    *   Data Create: `./bin/invoke.sh <alias> 'http://localhost:5000/api/data/create' '{}'`
+    *   Data Delete: `./bin/invoke.sh <alias> 'http://localhost:5000/api/data/delete' '{}'`
+    *   Quote Execute: `./bin/invoke.sh <alias> 'http://localhost:5000/api/executebatch' '{"soqlWhereClause": "..."}'`
+
+*   **OpenAPI Schema Verification Workflow:**
+    1.  **Test Startup:** Run `bin/start.sh --mode test`. Wait for completion and review `heroku_local_output.log` to confirm no startup errors.
+    2.  **Run Server:** Run `bin/start.sh --mode run` in a background terminal.
+    3.  **Compare Schema:** Fetch the dynamic schema from `/docs/json` on the running server (assume port 5000) and compare it against `api-docs.yaml` for the specific alignment task being addressed.
