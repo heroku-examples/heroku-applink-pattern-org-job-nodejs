@@ -1,81 +1,105 @@
 openapi: 3.0.1
 info:
-  title: OpenAPI definition
-  description: API for calculating pricing and managing sample data, interacting with Salesforce via AppLink.
-  version: v0
+  title: Org Job Pricing Engine API
+  description: API for calculating pricing and managing sample data, interacting
+    with Salesforce via AppLink.
+  version: 1.0.0
 servers:
-- url: http://localhost:5000
-  description: Local development server
+  - url: http://localhost:5000
+    description: Local development server
 tags:
-- name: Pricing Engine
-  description: Leverage dynamic pricing calculation logic and rules to calculate pricing
-    information in the form of Quotes.
-- name: Sample Data
-  description: Sample data management endpoints
+  - name: Pricing Engine
+    description: Quote generation endpoints
+  - name: Sample Data
+    description: Sample data management endpoints
 paths:
   /api/executebatch:
     post:
+      operationId: executeBatch
+      summary: Submit Batch Pricing Job
       tags:
-      - Pricing Engine
-      summary: Start batch processing for Quote generation
+        - Pricing Engine
       description: Calculate pricing and generate quotes from Opportunities queried
         using the SOQL WHERE clause.
-      operationId: executeBatch
       requestBody:
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/BatchExecutionRequest"
-        required: true
       responses:
         "202":
           description: Job accepted for processing
           content:
-            'application/json':
+            application/json:
               schema:
-                $ref: "#/components/schemas/JobResponse"
+                $ref: "#/components/schemas/BatchExecutionResponse"
   /api/data/delete:
     post:
-      tags:
-      - Sample Data
-      summary: Submit Sample Data Deletion Job
-      description: Starts a job to delete generate Quotes
       operationId: datadelete
+      summary: Submit Sample Data Deletion Job
+      tags:
+        - Sample Data
+      description: Starts a job to delete generate Quotes
       responses:
         "202":
           description: Data operation job accepted
           content:
-            'application/json':
+            application/json:
               schema:
-                $ref: "#/components/schemas/JobResponse"
+                $ref: "#/components/schemas/DataJobResponse"
   /api/data/create:
     post:
-      tags:
-      - Sample Data
-      summary: Submit Sample Data Creation Job
-      description: Starts a job to create a large amount of Opportunity records.
       operationId: datacreate
+      summary: Submit Sample Data Creation Job
+      tags:
+        - Sample Data
+      description: Starts a job to create a large amount of Opportunity records.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties:
+                count:
+                  type: integer
+                  minimum: 1
+                  default: 10
+                  description: Number of sample Opportunity records to create (defaults to 10)
       responses:
         "202":
           description: Data operation job accepted
           content:
-            'application/json':
+            application/json:
               schema:
-                $ref: "#/components/schemas/JobResponse"
+                $ref: "#/components/schemas/DataJobResponse"
 components:
   schemas:
     BatchExecutionRequest:
       type: object
+      required:
+        - soqlWhereClause
+      description: Request to execute a batch process, includes a SOQL WHERE clause to
+        extract product information
       properties:
         soqlWhereClause:
           type: string
           description: A SOQL WHERE clause for filtering opportunities
-      description: "Request to execute a batch process, includes a SOQL WHERE clause to extract product information"
-    JobResponse:
+    BatchExecutionResponse:
       type: object
+      description: Response includes the unique job ID processing the batch execution
+        request.
       properties:
         jobId:
           type: string
           format: uuid
           description: Unique job ID for tracking the worker process
-      description: Response includes the unique job ID processing the request.
+    DataJobResponse:
+      type: object
+      description: Response includes the unique job ID processing the data operation
+        request.
+      properties:
+        jobId:
+          type: string
+          format: uuid
+          description: Unique job ID for tracking the worker process

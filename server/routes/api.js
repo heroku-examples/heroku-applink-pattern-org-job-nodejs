@@ -22,7 +22,7 @@ const executeBatchSchema = {
       content: { // Add content wrapper for $ref
         'application/json': {
           schema: {
-            $ref: 'JobResponse#' // Reference schema by $id
+            $ref: 'BatchExecutionResponse#' // Changed from JobResponse#
           }
         }
       }
@@ -39,7 +39,7 @@ const dataOperationSchema = {
       content: { // Add content wrapper for $ref
         'application/json': {
           schema: {
-            $ref: 'JobResponse#' // Reference schema by $id
+            $ref: 'DataJobResponse#' // Changed from JobResponse#
           }
         }
       }

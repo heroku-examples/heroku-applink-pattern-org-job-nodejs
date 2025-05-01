@@ -7,18 +7,18 @@ import apiRoutes from './routes/api.js';
 
 // === Shared Schemas ===
 // Define reusable schemas as constants
-const JobResponseSchema = {
-  $id: 'JobResponse', // Add $id for referencing
-  type: 'object',
-  description: 'Response includes the unique job ID processing the request.',
-  properties: {
-    jobId: {
-      type: 'string',
-      format: 'uuid',
-      description: 'Unique job ID for tracking the worker process'
-    }
-  }
-};
+// const JobResponseSchema = { // Original consolidated schema - replaced below
+//   $id: 'JobResponse',
+//   type: 'object',
+//   description: 'Response includes the unique job ID processing the request.',
+//   properties: {
+//     jobId: {
+//       type: 'string',
+//       format: 'uuid',
+//       description: 'Unique job ID for tracking the worker process'
+//     }
+//   }
+// };
 
 const BatchExecutionRequestSchema = {
   $id: 'BatchExecutionRequest', // Add $id for referencing
@@ -33,6 +33,33 @@ const BatchExecutionRequestSchema = {
   }
 };
 
+// Define separate response schemas to match Java contract
+const BatchExecutionResponseSchema = {
+  $id: 'BatchExecutionResponse',
+  type: 'object',
+  description: 'Response includes the unique job ID processing the batch execution request.',
+  properties: {
+    jobId: {
+      type: 'string',
+      format: 'uuid',
+      description: 'Unique job ID for tracking the worker process'
+    }
+  }
+};
+
+const DataJobResponseSchema = {
+  $id: 'DataJobResponse',
+  type: 'object',
+  description: 'Response includes the unique job ID processing the data operation request.',
+  properties: {
+    jobId: {
+      type: 'string',
+      format: 'uuid',
+      description: 'Unique job ID for tracking the worker process'
+    }
+  }
+};
+
 // Basic logging configuration
 const fastify = Fastify({
   logger: {
@@ -41,8 +68,10 @@ const fastify = Fastify({
 });
 
 // Add shared schemas *before* registering Swagger or routes
-fastify.addSchema(JobResponseSchema);
+// fastify.addSchema(JobResponseSchema); // Removed
 fastify.addSchema(BatchExecutionRequestSchema);
+fastify.addSchema(BatchExecutionResponseSchema); // Added
+fastify.addSchema(DataJobResponseSchema); // Added
 
 // Register Swagger for dynamic generation
 fastify.register(swagger, {
@@ -63,8 +92,10 @@ fastify.register(swagger, {
     components: {
       schemas: {
         // Reference the added schemas using their $id
-        JobResponse: { $ref: 'JobResponse#' },
-        BatchExecutionRequest: { $ref: 'BatchExecutionRequest#' }
+        BatchExecutionRequest: { $ref: 'BatchExecutionRequest#' },
+        BatchExecutionResponse: { $ref: 'BatchExecutionResponse#' },
+        DataJobResponse: { $ref: 'DataJobResponse#' }
+        // JobResponse removed
       }
     }
   },
