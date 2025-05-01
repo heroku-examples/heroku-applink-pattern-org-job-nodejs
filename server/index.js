@@ -22,6 +22,7 @@ fastify.register(swagger, {
       version: '1.0.0'
     },
     servers: [
+      { url: 'http://localhost:5000', description: 'Local development server' }
     ],
     tags: [
       { name: 'Pricing Engine', description: 'Quote generation endpoints' },
