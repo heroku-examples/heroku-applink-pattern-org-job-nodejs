@@ -24,16 +24,16 @@ Follow the README instructions to set up a local testing environment connected t
         - [x] Include `Product2Id` in OLI generation and Bulk API submission.
         - [x] Remove detailed debug logs added previously.
         - [x] Refine remaining logs for conciseness and alignment with Java style.
-- [ ] Use `./bin/invoke.sh` to generate quotes (`POST /api/executebatch`)
-    - [ ] Verify job ID is returned.
-    - [ ] Monitor `heroku local` logs for `web` and `worker` activity (Quote generation).
-    - [ ] Check Salesforce org for newly created Quote/QuoteLineItem records.
-    - [ ] Debug any errors in `handleQuoteMessage` (`server/worker.js`).
-- [ ] Use `./bin/invoke.sh` to delete sample data (`POST /api/data/delete`)
-    - [ ] Verify job ID is returned.
-    - [ ] Monitor `heroku local` logs for `web` and `worker` activity (Data deletion).
-    - [ ] Check Salesforce org to confirm data deletion.
-    - [ ] Debug any errors in `handleDataMessage` (`server/worker.js`).
+- [x] Use `./bin/invoke.sh` to generate quotes (`POST /api/executebatch`)
+    - [x] Verify job ID is returned.
+    - [x] Monitor `heroku local` logs for `web` and `worker` activity (Quote generation).
+    - [x] Check Salesforce org for newly created Quote/QuoteLineItem records.
+    - [x] Debug any errors in `handleQuoteMessage` (`server/services/quote.js`) - Fixed field name and result handling.
+- [x] Use `./bin/invoke.sh` to delete sample data (`POST /api/data/delete`)
+    - [x] Verify job ID is returned.
+    - [x] Monitor `heroku local` logs for `web` and `worker` activity (Data deletion).
+    - [x] Check Salesforce org to confirm data deletion.
+    - [x] Debug any errors in `handleDataMessage` (`server/services/data.js`).
 
 ## Future Tasks
 - [ ] Implement more robust error handling in API endpoints and worker handlers.
@@ -57,4 +57,6 @@ Follow the README instructions to set up a local testing environment connected t
 - `bin/invoke.sh` - Script used to simulate Salesforce requests to the local server.
 - `server/index.js` - The `web` process, receives API calls.
 - `server/routes/api.js` - API route handlers.
-- `server/worker.js` - The `worker` process, handles background jobs. 
+- `server/worker.js` - The `worker` process, handles background jobs (delegates to services).
+- `server/services/quote.js` - Handles quote generation logic.
+- `server/services/data.js` - Handles data creation/deletion logic. 
