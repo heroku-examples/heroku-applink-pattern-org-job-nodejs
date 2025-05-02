@@ -56,14 +56,12 @@ Open a new terminal window and enter the following command to start a job that g
 
 ```sh
 # Use the invoke script (replace my-org with your org alias)
-# Target: POST /api/data/create
+# Target: POST /api/data/create (Default: 10 Opportunities)
 ./bin/invoke.sh my-org 'http://localhost:5000/api/data/create' '{}'
-```
 
-> The default is to create 10 Opportunities. To specify a different number, include `count` in the JSON payload, e.g., to create 100:
-> ```sh
-> ./bin/invoke.sh my-org 'http://localhost:5000/api/data/create' '{"count": 100}'
-> ```
+# To specify a different number (e.g., 100), use the query parameter:
+./bin/invoke.sh my-org 'http://localhost:5000/api/data/create?numberOfOpportunities=100' '{}'
+```
 
 This will respond with a job Id, as shown in the example below:
 
@@ -186,9 +184,7 @@ As noted in the [Extending Apex, Flow and Agentforce](https://github.com/heroku-
 ```
 echo \
 "ExternalService.GenerateQuoteJob service = new ExternalService.GenerateQuoteJob();" \
-"ExternalService.GenerateQuoteJob.datacreate_Request request = new ExternalService.GenerateQuoteJob.datacreate_Request();" \
-"request.body = new ExternalService.GenerateQuoteJob_datacreate_IN_body();" \
-"System.debug('Quote Id: ' + service.datacreate(request).Code202.jobId);" \
+"System.debug('Quote Id: ' + service.datacreate().Code202.jobId);" \
 | sf apex run -o my-org
 ```
 

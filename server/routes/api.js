@@ -3,8 +3,6 @@ import redisClient from '../config/redis.js'; // Adjusted path
 
 // Define a single channel for all job types
 const JOBS_CHANNEL = 'jobsChannel';
-// const QUOTE_QUEUE = 'quoteQueue'; // No longer needed
-// const DATA_QUEUE = 'dataQueue'; // No longer needed
 
 // Define schemas for request validation and Swagger generation
 const executeBatchSchema = {
@@ -51,15 +49,7 @@ const dataCreateSchema = {
   ...dataOperationSchema,
   summary: 'Submit Sample Data Creation Job',
   description: "Starts a job to create a large amount of Opportunity records.",
-  operationId: 'datacreate',
-  body: {
-    // Keep inline definition for count as it's specific to this endpoint
-    type: 'object',
-    required: [],
-    properties: {
-      count: { type: 'integer', minimum: 1, default: 10, description: 'Number of sample Opportunity records to create (defaults to 10)' }
-    }
-  }
+  operationId: 'datacreate'
   // Inherits response from dataOperationSchema which now uses $ref
 };
 
@@ -78,7 +68,7 @@ const dataDeleteSchema = {
  * @param {object} opts Plugin options
  */
 export default async function apiRoutes (fastify, opts) {
-  // === Helper Function ===
+
   // Updated to use PUBLISH instead of LPUSH
   async function publishJob (request, reply, payload) {
     if (!request.salesforce || !request.salesforce.context) {
@@ -116,8 +106,10 @@ export default async function apiRoutes (fastify, opts) {
   });
 
   fastify.post('/data/create', { schema: dataCreateSchema }, async (request, reply) => {
-    const count = request.body?.count ?? dataCreateSchema.body.properties.count.default ?? 10;
-    // Add jobType to distinguish
+    // Safely parse query param and default to 10
+    const requestedCount = parseInt(request.query?.numberOfOpportunities, 10);
+    const count = (!isNaN(requestedCount) && requestedCount >= 1) ? requestedCount : 10; // Default to 10
+    // Add jobType to distinguish, pass value as 'count' for the worker
     await publishJob(request, reply, { jobType: 'data', operation: 'create', count });
   });
 

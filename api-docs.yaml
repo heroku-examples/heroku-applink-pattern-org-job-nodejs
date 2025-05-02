@@ -54,18 +54,6 @@ paths:
       tags:
         - Sample Data
       description: Starts a job to create a large amount of Opportunity records.
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              required: []
-              properties:
-                count:
-                  type: integer
-                  minimum: 1
-                  default: 10
-                  description: Number of sample Opportunity records to create (defaults to 10)
       responses:
         "202":
           description: Data operation job accepted
