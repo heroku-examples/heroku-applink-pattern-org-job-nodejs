@@ -47,7 +47,7 @@ heroku config --shell > .env
 pnpm install
 
 # Run locally (starts both web and worker as defined in Procfile)
-heroku local
+heroku local -f Procfile.local web=1,worker=1
 ```
 
 ### Generating test data
