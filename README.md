@@ -105,15 +105,14 @@ Run the following command to execute a batch job to generate **Quote** records f
 
 ```sh
 # Target: POST /api/executebatch
-./bin/invoke.sh my-org http://localhost:5000/api/executebatch '{"soqlWhereClause": "Name LIKE '\''Sample Opp %'\''"}'
+./bin/invoke.sh my-org http://localhost:5000/api/executebatch '{"soqlWhereClause": "Name LIKE '\''Sample Opportunity%'\''"}'
 ```
 
 Observe the log output from `heroku local` and you will see output similar to the following:
 
 ```
 web.1    | Job published to Redis channel jobsChannel...
-worker.1 | Worker received job with ID: 778412d8-f56f-4a11-ad62-09174339e5f9 for SOQL WHERE clause: Name LIKE 'Sample Opp %'
-worker.1 | Worker executing batch for Job ID: 778412d8-f56f-4a11-ad62-09174339e5f9 with WHERE clause: Name LIKE 'Sample Opp %'
+worker.1 | Worker received job with ID: 778412d8-f56f-4a11-ad62-09174339e5f9 for SOQL WHERE clause: Name LIKE 'Sample Opportunity%'
 worker.1 | Processing 10 Opportunities
 worker.1 | Submitting UnitOfWork to create 10 Quotes and 20 Line Items
 worker.1 | Job processing completed for Job ID: 778412d8-f56f-4a11-ad62-09174339e5f9. Results: 10 succeeded, 0 failed.
@@ -198,7 +197,7 @@ echo \
 "ExternalService.GenerateQuoteJob service = new ExternalService.GenerateQuoteJob();" \
 "ExternalService.GenerateQuoteJob.executeBatch_Request request = new ExternalService.GenerateQuoteJob.executeBatch_Request();" \
 "ExternalService.GenerateQuoteJob_BatchExecutionRequest body = new ExternalService.GenerateQuoteJob_BatchExecutionRequest();" \
-"body.soqlWhereClause = 'Name LIKE \\\\'Sample Opp %\\\\'';" \
+"body.soqlWhereClause = 'Name LIKE \\\\'Sample Opportunity%\\\\'';" \
 "request.body = body;" \
 "System.debug('Quote Id: ' + service.executeBatch(request).Code202.jobId);" \
 | sf apex run -o my-org
@@ -245,8 +244,8 @@ worker.1 | Bulk API v2 Job 750am00000Q3uV1AAJ processing complete.
 ```
 
 # Technical Information
-- The [Heroku Key Value Store](https://elements.heroku.com/addons/heroku-redis) add-on (Heroku Redis) is used to manage two channels (`quoteQueue`, `dataQueue`) that act as queues for sample data and quote generation jobs. The `mini` tier of this [add-on](https://devcenter.heroku.com/articles/heroku-redis) can be used for this sample. Redis connection details are managed via environment variables (typically set in `.env` locally or via Heroku Config Vars).
-- Node.js and the `Procfile` define the `web` and `worker` process types. The `web` process runs the Fastify server (`server/index.js`) handling API requests, while the `worker` process (`server/worker.js`) listens to the Redis queues and executes jobs.
+- The [Heroku Redis](https://elements.heroku.com/addons/heroku-redis) add-on is used to manage job queuing via a single Redis Stream named `jobsChannel`. While there are logically two types of jobs (quote generation and sample data management), both are sent to this same stream. The worker process reads from this stream and dispatches jobs to the appropriate service based on the job type included in the message payload. The `mini` tier of this [add-on](https://devcenter.heroku.com/articles/heroku-redis) is suitable for this sample. Redis connection details are managed via environment variables (typically set in `.env` locally or via Heroku Config Vars).
+- Node.js and the `Procfile` define the `web` and `worker` process types. The `web` process runs the Fastify server (`server/index.js`) handling API requests and publishing jobs to the Redis stream, while the `worker` process (`server/worker.js`) listens to the stream and executes jobs using the appropriate service (`server/services/quote.js` or `server/services/data.js`).
 - The quote generation logic in `server/services/quote.js` uses the AppLink SDK's Data API and Unit of Work pattern (`org.dataApi.newUnitOfWork`, `commitUnitOfWork`) to insert **Quote** and **QuoteLineItem** records together within a single transaction, ensuring atomicity.
 - The `invoke.sh` script relies on the `x-client-context` header being correctly passed for authentication when running locally. The main `Procfile` is used for deployment, which incorporates the Heroku Integration service mesh.
 - The main worker process (`server/worker.js`) receives job messages via Redis, extracts and initializes the Salesforce context, and then delegates the core processing logic (using the context) to handlers defined in `server/services/quote.js` and `server/services/data.js`.

@@ -6,21 +6,6 @@ import salesforcePlugin from './middleware/salesforce.js';
 import apiRoutes from './routes/api.js';
 import formbody from '@fastify/formbody';
 
-// === Shared Schemas ===
-// Define reusable schemas as constants
-// const JobResponseSchema = { // Original consolidated schema - replaced below
-//   $id: 'JobResponse',
-//   type: 'object',
-//   description: 'Response includes the unique job ID processing the request.',
-//   properties: {
-//     jobId: {
-//       type: 'string',
-//       format: 'uuid',
-//       description: 'Unique job ID for tracking the worker process'
-//     }
-//   }
-// };
-
 const BatchExecutionRequestSchema = {
   $id: 'BatchExecutionRequest', // Add $id for referencing
   type: 'object',
@@ -69,10 +54,9 @@ const fastify = Fastify({
 });
 
 // Add shared schemas *before* registering Swagger or routes
-// fastify.addSchema(JobResponseSchema); // Removed
 fastify.addSchema(BatchExecutionRequestSchema);
-fastify.addSchema(BatchExecutionResponseSchema); // Added
-fastify.addSchema(DataJobResponseSchema); // Added
+fastify.addSchema(BatchExecutionResponseSchema);
+fastify.addSchema(DataJobResponseSchema);
 
 // Register Swagger for dynamic generation
 fastify.register(swagger, {
@@ -96,7 +80,6 @@ fastify.register(swagger, {
         BatchExecutionRequest: { $ref: 'BatchExecutionRequest#' },
         BatchExecutionResponse: { $ref: 'BatchExecutionResponse#' },
         DataJobResponse: { $ref: 'DataJobResponse#' }
-        // JobResponse removed
       }
     }
   },

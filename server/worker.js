@@ -64,7 +64,6 @@ async function handleJobMessage (channel, message) {
 
 async function startWorker () {
   console.log('[Worker] Starting (Pub/Sub mode)...');
-
   if (redisClient.status !== 'ready') {
     console.log('[Worker] Redis client not ready, waiting for ready event...');
     await new Promise((resolve, reject) => {
@@ -80,7 +79,6 @@ async function startWorker () {
     });
   }
   console.log('[Worker] Redis client connected.');
-
   redisClient.subscribe(JOBS_CHANNEL, (err, count) => {
     if (err) {
       console.error(`[Worker] Failed to subscribe to ${JOBS_CHANNEL}:`, err);
@@ -88,9 +86,7 @@ async function startWorker () {
     }
     console.log(`[Worker] Subscribed successfully to ${JOBS_CHANNEL}. Listener count: ${count}`);
   });
-
   redisClient.on('message', handleJobMessage);
-
   console.log(`[Worker] Subscribed to ${JOBS_CHANNEL} and waiting for messages...`);
 }
 

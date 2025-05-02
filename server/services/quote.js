@@ -16,53 +16,72 @@ function getDiscountForRegion (region, logger) {
 }
 
 /**
+ * Helper function to fetch all records for a SOQL query, handling pagination.
+ * @param {string} soql - The SOQL query string.
+ * @param {object} sfContext - The initialized Salesforce context (ContextImpl instance).
+ * @param {object} logger - A logger instance.
+ * @returns {Promise<Array>} - A promise that resolves with an array of all records.
+ */
+async function queryAll (soql, sfContext, logger) {
+  let allRecords = [];
+  try {
+    let result = await sfContext.org.dataApi.query(soql);
+    allRecords = allRecords.concat(result.records);
+    while (!result.done && result.nextRecordsUrl) {
+      result = await sfContext.org.dataApi.queryMore(result); // Use result object directly
+      allRecords = allRecords.concat(result.records);
+    }
+  } catch (error) {
+    logger.error({ err: error, soql }, 'Error during queryAll execution');
+    throw error; // Re-throw the error to be caught by the caller
+  }
+  return allRecords;
+}
+
+/**
  * Handles quote generation jobs.
  * @param {object} jobData - The job data object from Redis.
  * @param {object} sfContext - The initialized Salesforce context (ContextImpl instance).
  * @param {object} logger - A logger instance.
  */
 async function handleQuoteMessage (jobData, sfContext, logger) {
-  // *** 1. Use soqlWhereClause instead of opportunityIds ***
   const { jobId, soqlWhereClause } = jobData;
-  // Note: context is no longer destructured here, sfContext is passed in
+  // Use soqlWhereClause in the query
+  if (!soqlWhereClause) {
+    logger.warn(`No soqlWhereClause provided for Job ID: ${jobId}`);
+    return;
+  }
   logger.info(`Worker received job with ID: ${jobId} for SOQL WHERE clause: ${soqlWhereClause}`);
 
   try {
-    // *** Access APIs via sfContext.org ***
+    // Access APIs via sfContext.org
     if (!sfContext || !sfContext.org || !sfContext.org.dataApi) {
         logger.error(`Invalid sfContext or sfContext.org.dataApi for Quote Job ID: ${jobId}`);
         return;
     }
     const dataApi = sfContext.org.dataApi;
 
-    logger.info(`Worker executing batch for Job ID: ${jobId} with WHERE clause: ${soqlWhereClause}`);
-
-    // *** 2. Fetch Standard Pricebook ID ***
-    const standardPricebookResult = await dataApi.query("SELECT Id FROM Pricebook2 WHERE IsStandard = true LIMIT 1");
-    if (!(standardPricebookResult?.records?.[0]?.fields?.Id || standardPricebookResult?.records?.[0]?.fields?.id)) {
-        logger.error(`Standard Pricebook not found for Job ID: ${jobId}.`);
-        throw new Error('Standard Pricebook not found.');
+    // Fetch Standard Pricebook ID
+    const standardPricebookRecords = await queryAll("SELECT Id FROM Pricebook2 WHERE IsStandard = true LIMIT 1", sfContext, logger);
+    if (!standardPricebookRecords || standardPricebookRecords.length === 0) {
+      logger.error(`Standard Pricebook not found for Job ID: ${jobId}.`);
+      throw new Error('Standard Pricebook not found.');
     }
-    const standardPricebookId = standardPricebookResult.records[0].fields.Id || standardPricebookResult.records[0].fields.id;
+    const standardPricebookId = standardPricebookRecords[0].fields.Id || standardPricebookRecords[0].fields.id;
 
-    // *** 1. Use soqlWhereClause in the query ***
-    if (!soqlWhereClause) {
-      logger.warn(`No soqlWhereClause provided for Job ID: ${jobId}`);
-      return;
-    }
+    // Query Opportunities
     const oppQuery = `
       SELECT Id, Name, AccountId, CloseDate, StageName, Amount,
              (SELECT Id, Product2Id, Quantity, UnitPrice, PricebookEntryId FROM OpportunityLineItems)
       FROM Opportunity
       WHERE ${soqlWhereClause}
     `; // Use the provided WHERE clause
-    const oppResult = await dataApi.query(oppQuery);
-    const opportunities = oppResult.records;
+    const opportunities = await queryAll(oppQuery, sfContext, logger);
     if (!opportunities || opportunities.length === 0) {
       logger.warn(`No Opportunities or related OpportunityLineItems found for WHERE clause: ${soqlWhereClause}`);
       return;
     }
-    
+
     logger.info(`Processing ${opportunities.length} Opportunities`);
     const unitOfWork = dataApi.newUnitOfWork();
     const quoteRefs = new Map();
@@ -72,10 +91,8 @@ async function handleQuoteMessage (jobData, sfContext, logger) {
       // Access fields using .fields property
       const opp = oppSObject.fields;
       const oppId = opp.Id || opp.id; // Get the actual ID
-
       // Access subquery results correctly
       const lineItemsResult = oppSObject.subQueryResults?.OpportunityLineItems;
-
       if (!lineItemsResult?.records || lineItemsResult.records.length === 0) {
         logger.warn(`Opportunity ${oppId} has no line items. Skipping quote creation for Job ID: ${jobId}`);
         return;
@@ -83,13 +100,11 @@ async function handleQuoteMessage (jobData, sfContext, logger) {
 
       try {
         // 1. Create Quote
-        const quoteName = `Quote for ${opp.Name} - ${new Date().toISOString().split('T')[0]}`;
+        const quoteName = 'New Quote';
         const expirationDate = new Date(opp.CloseDate);
         expirationDate.setDate(expirationDate.getDate() + 30); // Quote expires 30 days after CloseDate
-
         // Calculate discount based on hardcoded region (matching Java example 'US')
         const discount = getDiscountForRegion('NAMER', logger); // Use hardcoded region 'NAMER'
-
         const quoteRef = unitOfWork.registerCreate({
           type: 'Quote',
           fields: {
@@ -98,7 +113,6 @@ async function handleQuoteMessage (jobData, sfContext, logger) {
             Pricebook2Id: standardPricebookId, // *** 3. Use fetched Standard Pricebook ID ***
             ExpirationDate: expirationDate.toISOString().split('T')[0],
             Status: 'Draft'
-            // *** 4. Remove Discount field from Quote ***
           }
         });
         quoteRefs.set(oppId, quoteRef);
@@ -107,19 +121,15 @@ async function handleQuoteMessage (jobData, sfContext, logger) {
         const currentOppLineItemCount = lineItemsResult.records.length;
         totalLineItems += currentOppLineItemCount;
         lineItemsResult.records.forEach(oliSObject => {
-          // Access fields using .fields property
+          // Apply discount to QuoteLineItem UnitPrice
           const oli = oliSObject.fields;
-
-          // *** 4. Apply discount to QuoteLineItem UnitPrice ***
           const originalUnitPrice = oli.UnitPrice;
           const quantity = oli.Quantity;
           // Ensure discount is a number between 0 and 1
           const validDiscount = (typeof discount === 'number' && discount >= 0 && discount <= 1) ? discount : 0;
-          // Check for null/undefined before calculation
           const calculatedDiscountedPrice = (originalUnitPrice != null && validDiscount != null)
                                             ? originalUnitPrice * (1 - validDiscount)
                                             : originalUnitPrice; // Default to original if calculation fails
-
           unitOfWork.registerCreate({
             type: 'QuoteLineItem',
             fields: {
@@ -147,11 +157,11 @@ async function handleQuoteMessage (jobData, sfContext, logger) {
     let successCount = 0;
     let failureCount = 0;
 
-    // *** Iterate through the original quoteRefs Map we created ***
+    // Iterate through the original quoteRefs Map we created
     quoteRefs.forEach((originalQuoteRef, oppId) => {
-      // *** Use the original reference object to get the result from the commit map ***
+      // Use the original reference object to get the result from the commit map
       const result = commitResult.get(originalQuoteRef);
-      // *** Check for presence of id (success) or errors (failure) ***
+      // Check for presence of id (success) or errors (failure)
       if (result?.id) { // Check if ID exists -> success
         successCount++;
       } else {
