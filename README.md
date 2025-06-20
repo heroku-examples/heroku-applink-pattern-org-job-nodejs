@@ -171,8 +171,7 @@ As noted in the [Extending Apex, Flow and Agentforce](https://github.com/heroku-
 ```
 echo \
 "HerokuAppLink.GenerateQuoteJob service = new HerokuAppLink.GenerateQuoteJob();" \
-"HerokuAppLink.GenerateQuoteJob.datacreate_Request request = new HerokuAppLink.GenerateQuoteJob.datacreate_Request();" \
-"System.debug('Quote Id: ' + service.datacreate(request).Code200.jobId);" \
+"System.debug('Quote Id: ' + service.datacreate().Code202.jobId);" \
 | sf apex run -o my-org
 ```
 
@@ -188,7 +187,7 @@ echo \
 "HerokuAppLink.GenerateQuoteJob_BatchExecutionRequest body = new HerokuAppLink.GenerateQuoteJob_BatchExecutionRequest();" \
 "body.soqlWhereClause = 'Name LIKE \\\\'Sample Opportunity%\\\\'';" \
 "request.body = body;" \
-"System.debug('Quote Id: ' + service.executeBatch(request).Code200.jobId);" \
+"System.debug('Quote Id: ' + service.executeBatch(request).Code202.jobId);" \
 | sf apex run -o my-org
 ```
 
@@ -211,7 +210,7 @@ If you have deployed the application, run the following:
 ```
 echo \
 "HerokuAppLink.GenerateQuoteJob service = new HerokuAppLink.GenerateQuoteJob();" \
-"System.debug('Quote Id: ' + service.datadelete().Code200.jobId);" \
+"System.debug('Quote Id: ' + service.datadelete().Code202.jobId);" \
 | sf apex run -o my-org
 ```
 
