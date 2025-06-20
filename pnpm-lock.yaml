@@ -17,9 +17,9 @@ importers:
       '@fastify/swagger-ui':
         specifier: ^3.0.0
         version: 3.1.0
-      '@heroku/salesforce-sdk-nodejs':
-        specifier: 0.3.4-ea
-        version: 0.3.4-ea
+      '@heroku/applink':
+        specifier: ^1.0.0-ea.1
+        version: 1.0.0-ea.2
       dotenv:
         specifier: ^16.5.0
         version: 16.5.0
@@ -77,8 +77,8 @@ packages:
   '@fastify/swagger@8.15.0':
     resolution: {integrity: sha512-zy+HEEKFqPMS2sFUsQU5X0MHplhKJvWeohBwTCkBAJA/GDYGLGUWQaETEhptiqxK7Hs0fQB9B4MDb3pbwIiCwA==}
 
-  '@heroku/salesforce-sdk-nodejs@0.3.4-ea':
-    resolution: {integrity: sha512-mDwM37FtoDN+eYY6S0yz2+X8UI+n3Qhl2t5KxxCpsEtCyFlW20jaksrf1iakwhmIMzRskTOONu8kZeuuDXNBWw==}
+  '@heroku/applink@1.0.0-ea.2':
+    resolution: {integrity: sha512-L2hyY/hRHrsNUShAQIkiM9jNinzGP8mA3BgCzg0R0Lw2oqjwadwFMvbJm4qqY97pUJSvJmhQXBsBs+PPbBwS8w==}
 
   '@ioredis/commands@1.2.0':
     resolution: {integrity: sha512-Sx1pU8EM64o2BrqNpEO1CNLtKQwyhuXuqyfH7oGKCk+1a33d2r5saW8zNwm3j6BTExtjrv2BxTgzzkMwts6vGg==}
@@ -1159,15 +1159,13 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@heroku/salesforce-sdk-nodejs@0.3.4-ea':
+  '@heroku/applink@1.0.0-ea.2':
     dependencies:
       '@salesforce/core': 8.10.0
       csv-parse: 5.6.0
       csv-stringify: 6.5.2
       jsforce: 2.0.0-beta.29
       luxon: 3.6.1
-      node-fetch: 2.7.0
-      semver: 7.7.1
       throng: 5.0.0
       whatwg-mimetype: 3.0.0
     optionalDependencies:
