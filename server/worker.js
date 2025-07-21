@@ -1,7 +1,7 @@
 'use strict';
 
 import redisClient from './config/redis.js';
-import { ContextImpl } from '@heroku/salesforce-sdk-nodejs/dist/sdk/context.js';
+import { ContextImpl } from '@heroku/applink/dist/sdk/context.js';
 
 const JOBS_CHANNEL = 'jobsChannel'; // Use the same channel name as the publisher
 

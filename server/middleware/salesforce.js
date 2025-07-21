@@ -1,5 +1,5 @@
 import fp from 'fastify-plugin';
-import AppLinkClient from '@heroku/salesforce-sdk-nodejs';
+import AppLinkClient from '@heroku/applink';
 
 /**
  * Fastify plugin to initialize the Salesforce AppLink SDK

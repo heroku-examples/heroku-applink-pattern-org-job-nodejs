@@ -11,6 +11,14 @@ const executeBatchSchema = {
   summary: 'Submit Batch Pricing Job',
   description: "Calculate pricing and generate quotes from Opportunities queried using the SOQL WHERE clause.",
   operationId: 'executeBatch',
+  'x-sfdc': {
+    heroku: {
+      authorization: {
+        connectedApp: 'GenerateQuoteJobConnectedApp',
+        permissionSet: 'GenerateQuoteJobPermissions'
+      }
+    }
+  },  
   body: {
     $ref: 'BatchExecutionRequest#' // Reference schema by $id
   },
@@ -30,6 +38,14 @@ const executeBatchSchema = {
 
 const dataOperationSchema = {
   // description: 'Submits a sample data operation (create or delete).',
+  'x-sfdc': {
+    heroku: {
+      authorization: {
+        connectedApp: 'GenerateQuoteJobConnectedApp',
+        permissionSet: 'GenerateQuoteJobPermissions'
+      }
+    }
+  },  
   tags: ['Sample Data'],
   response: {
     202: { // Use 202 Accepted

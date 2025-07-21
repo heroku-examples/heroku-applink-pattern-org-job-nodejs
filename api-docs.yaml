@@ -4,63 +4,6 @@ info:
   description: API for calculating pricing and managing sample data, interacting
     with Salesforce via AppLink.
   version: 1.0.0
-servers:
-  - url: http://localhost:5000
-    description: Local development server
-tags:
-  - name: Pricing Engine
-    description: Quote generation endpoints
-  - name: Sample Data
-    description: Sample data management endpoints
-paths:
-  /api/executebatch:
-    post:
-      operationId: executeBatch
-      summary: Submit Batch Pricing Job
-      tags:
-        - Pricing Engine
-      description: Calculate pricing and generate quotes from Opportunities queried
-        using the SOQL WHERE clause.
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/BatchExecutionRequest"
-      responses:
-        "202":
-          description: Job accepted for processing
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BatchExecutionResponse"
-  /api/data/delete:
-    post:
-      operationId: datadelete
-      summary: Submit Sample Data Deletion Job
-      tags:
-        - Sample Data
-      description: Starts a job to delete generate Quotes
-      responses:
-        "202":
-          description: Data operation job accepted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DataJobResponse"
-  /api/data/create:
-    post:
-      operationId: datacreate
-      summary: Submit Sample Data Creation Job
-      tags:
-        - Sample Data
-      description: Starts a job to create a large amount of Opportunity records.
-      responses:
-        "202":
-          description: Data operation job accepted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DataJobResponse"
 components:
   schemas:
     BatchExecutionRequest:
@@ -91,3 +34,70 @@ components:
           type: string
           format: uuid
           description: Unique job ID for tracking the worker process
+paths:
+  /api/executebatch:
+    post:
+      operationId: executeBatch
+      summary: Submit Batch Pricing Job
+      tags:
+        - Pricing Engine
+      description: Calculate pricing and generate quotes from Opportunities queried
+        using the SOQL WHERE clause.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchExecutionRequest"
+      x-sfdc:
+        heroku:
+          authorization:
+            connectedApp: GenerateQuoteJobConnectedApp
+            permissionSet: GenerateQuoteJobPermissions
+      responses:
+        "202":
+          description: Job accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchExecutionResponse"
+  /api/data/create:
+    post:
+      operationId: datacreate
+      summary: Submit Sample Data Creation Job
+      tags: &a1
+        - Sample Data
+      description: Starts a job to create a large amount of Opportunity records.
+      x-sfdc: &a2
+        heroku:
+          authorization:
+            connectedApp: GenerateQuoteJobConnectedApp
+            permissionSet: GenerateQuoteJobPermissions
+      responses:
+        "202":
+          description: Data operation job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataJobResponse"
+  /api/data/delete:
+    post:
+      operationId: datadelete
+      summary: Submit Sample Data Deletion Job
+      tags: *a1
+      description: Starts a job to delete generate Quotes
+      x-sfdc: *a2
+      responses:
+        "202":
+          description: Data operation job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataJobResponse"
+servers:
+  - url: http://localhost:5000
+    description: Local development server
+tags:
+  - name: Pricing Engine
+    description: Quote generation endpoints
+  - name: Sample Data
+    description: Sample data management endpoints
